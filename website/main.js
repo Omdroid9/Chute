@@ -832,11 +832,9 @@ if (demoInput) {
   let typeTimer = null;
 
   function renderRoute() {
-    // Grow with the content so multi-line examples never clip mid-word.
-    // Capped so a bad scrollHeight read can never blow up the hero layout.
-    demoInput.style.height = "auto";
-    demoInput.style.height = `${Math.min(demoInput.scrollHeight, 320)}px`;
-
+    // No auto-grow here: the hero textarea is a fixed height (see CSS) so
+    // the page below never shifts while the demo types. Longer content
+    // scrolls inside the box instead of pushing the window taller.
     const route = demoRoute(demoInput.value);
     chips.forEach((chip) => {
       chip.classList.toggle(

@@ -3562,10 +3562,12 @@ h3 {
 }
 
 .routing-demo-hero .routing-demo-input {
-  /* Floor fits the tallest cycling example: 4 lines × 26.35px line-height
-     + 25.6px padding + 2px border = 133px. The window holds one steady
-     height across the whole demo loop instead of pumping the page. */
+  /* Fixed height — fits the tallest cycling example (the 4-line standup)
+     at desktop width; anything longer scrolls inside the box rather than
+     growing it, so the page below never shifts as the demo auto-types. */
+  height: 8.5rem;
   min-height: 8.5rem;
+  overflow-y: auto;
 }
 
 .routing-demo-hero .routing-demo-reason[hidden] {
@@ -3574,9 +3576,11 @@ h3 {
 }
 
 .routing-demo-hero .routing-demo-reason {
-  /* Exactly one text line (1.5 × 13px) so the row is the same height
-     empty, hidden, or filled — the window never moves at all. */
-  min-height: 1.5em;
+  /* Reserve two lines (3em): most routing reasons wrap to two at this
+     width, a few fit one. Holding the taller slot in every state — empty,
+     hidden, one line, or two — means the window never moves at all. */
+  min-height: 3em;
+  align-items: flex-start;
 }
 
 @media (max-width: 959px) {
