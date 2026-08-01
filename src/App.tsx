@@ -370,7 +370,7 @@ function App() {
     return <div className="h-full w-full bg-transparent" />;
   }
 
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime && !forceOnboarding) {
     return (
       <div className="app-page flex h-full w-full items-center justify-center p-6">
         <div className="codex-surface max-w-md rounded-xl p-4 text-sm">

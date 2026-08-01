@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Nohemi — the brand display face (self-hosted, matches the marketing site). */
+@font-face {
+  font-family: "Nohemi";
+  src: url("./assets/fonts/nohemi/Nohemi-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nohemi";
+  src: url("./assets/fonts/nohemi/Nohemi-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nohemi";
+  src: url("./assets/fonts/nohemi/Nohemi-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nohemi";
+  src: url("./assets/fonts/nohemi/Nohemi-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   /* ----- Typeface system (mirrors marketing site) -----
      Geist for system voice, Geist Mono for keys/numbers/times,
@@ -15,7 +41,7 @@
   --font-serif:
     "Instrument Serif", "Iowan Old Style", "Apple Garamond", "Baskerville",
     Georgia, serif;
-  --font-display: var(--font-sans);
+  --font-display: "Nohemi", var(--font-sans);
 
   font-family: var(--font-sans);
   font-synthesis: none;
@@ -1256,27 +1282,21 @@ html[data-theme="dark"] .list-picker-option-active {
   filter: blur(18px);
 }
 
+/* Welcome: one soft glow bloomed behind the orb — no horizon seam. */
 .onboard-scene-welcome .onboard-moon-glow {
-  top: -28%;
-  height: 58%;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
   background: radial-gradient(
-    ellipse 85% 60% at 50% 100%,
-    rgba(255, 255, 255, 0.11) 0%,
-    rgba(255, 255, 255, 0.05) 35%,
+    58% 40% at 50% 30%,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(150, 178, 255, 0.05) 34%,
     transparent 68%
   );
 }
 
 .onboard-scene-welcome .onboard-moon-glow::after {
-  inset: 28% 8% auto;
-  height: 32%;
-  background: radial-gradient(
-    ellipse 90% 100% at 50% 50%,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(140, 170, 255, 0.06) 40%,
-    transparent 75%
-  );
-  filter: blur(22px);
+  display: none;
 }
 
 .onboard-brand-hero {
@@ -1324,12 +1344,12 @@ html[data-theme="dark"] .list-picker-option-active {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.03) 20%,
-    rgba(255, 255, 255, 0.07) 50%,
-    rgba(255, 255, 255, 0.03) 80%,
+    rgba(255, 255, 255, 0.02) 24%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.02) 76%,
     transparent 100%
   );
-  filter: blur(12px);
+  filter: blur(16px);
 }
 
 .onboard-brand-smoke::after {
@@ -1412,9 +1432,10 @@ html[data-theme="dark"] .list-picker-option-active {
   justify-content: center;
   align-items: baseline;
   gap: 0.08em;
-  font-size: clamp(2.1rem, 6vw, 2.85rem);
-  font-weight: 500;
-  letter-spacing: -0.045em;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 6vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
   line-height: 1;
 }
 
@@ -1480,6 +1501,15 @@ html[data-theme="dark"] .list-picker-option-active {
 .onboard-panel {
   width: 100%;
   max-width: 26rem;
+}
+
+/* Step headings share the brand display face for consistency with the site. */
+.onboard-panel h2,
+.tour-slide-copy h2,
+.onboard-connect-head h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .onboard-connect-head {

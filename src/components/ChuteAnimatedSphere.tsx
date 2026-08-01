@@ -55,13 +55,11 @@ export default function ChuteAnimatedSphere({
           <stop offset="94%" stopColor="#ffffff" stopOpacity="0.22" />
           <stop offset="100%" stopColor="#8eb8f0" stopOpacity="0.38" />
         </radialGradient>
-        <linearGradient id={`${base}-mist`} x1="0" y1="64" x2="128" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-          <stop offset="30%" stopColor="#ffffff" stopOpacity="0.06" />
-          <stop offset="50%" stopColor="#eef4ff" stopOpacity="0.14" />
-          <stop offset="70%" stopColor="#ffffff" stopOpacity="0.05" />
+        <radialGradient id={`${base}-mist`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#eef4ff" stopOpacity="0.15" />
+          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.05" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-        </linearGradient>
+        </radialGradient>
         <clipPath id={`${base}-orb`}>
           <circle cx="64" cy="64" r="54" />
         </clipPath>
@@ -98,9 +96,9 @@ export default function ChuteAnimatedSphere({
         <circle cx="64" cy="64" r="54" fill={`url(#${base}-base)`} />
         <circle cx="64" cy="64" r="54" fill={`url(#${base}-depth)`} />
 
-        <rect x="0" y="52" width="128" height="24" fill={`url(#${base}-mist)`} opacity="0.85">
-          <animate attributeName="opacity" values="0.7;0.9;0.7" dur="8s" repeatCount="indefinite" />
-        </rect>
+        <ellipse cx="64" cy="60" rx="54" ry="15" fill={`url(#${base}-mist)`} opacity="0.75">
+          <animate attributeName="opacity" values="0.6;0.8;0.6" dur="8s" repeatCount="indefinite" />
+        </ellipse>
 
         <circle cx="64" cy="64" r="54" fill="#dbeafe" fillOpacity="0.12" filter={`url(#${base}-mist-filter)`} />
 
