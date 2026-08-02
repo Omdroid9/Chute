@@ -182,6 +182,7 @@ pub fn create_apple_reminder(
   set reminderBody to item 3 of argv
   set hasDue to item 4 of argv
   tell application "Reminders"
+    launch
     if not (exists list listName) then
       make new list with properties {name:listName}
     end if
@@ -294,6 +295,7 @@ pub fn create_apple_note(folder: String, title: String, body: String) -> Result<
   set folderName to item 1 of argv
   set noteBody to item 3 of argv
   tell application "Notes"
+    launch
     set targetAccount to default account
     tell targetAccount
       if not (exists folder folderName) then
@@ -394,6 +396,7 @@ pub fn create_apple_calendar_event(
   set minutes of endDate to (item 15 of argv) as integer
   set seconds of endDate to (item 16 of argv) as integer
   tell application "Calendar"
+    launch
     if calName is "" then
       set targetCal to first calendar whose writable is true
     else
@@ -414,6 +417,14 @@ end run"#;
     let alarm_arg = alarm_minutes
       .map(|m| m.to_string())
       .unwrap_or_default();
+
+    // Calendar.app must be running before it will accept new events, otherwise
+    // AppleScript fails with -600 ("Application isn't running"). Launch it in
+    // the background first — `-g` keeps focus where it is, `-j` keeps it hidden
+    // — so a cold start never races the script below.
+    let _ = Command::new("open")
+      .args(["-g", "-j", "-a", "Calendar"])
+      .status();
 
     let mut cmd = Command::new("osascript");
     cmd
