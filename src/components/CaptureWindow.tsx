@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { parseReminderSyntax } from "../lib/parser";
 import { continueListOnNewline } from "../lib/listContinuation";
+import { parseTimer, formatCountdown } from "../lib/timer";
 import { useAutoUpdater } from "../lib/updater";
 import {
   createManagedList,
@@ -367,6 +368,9 @@ export default function CaptureWindow() {
   const remaining = MAX_CHARS - text.length;
   const reminderCommand = hasReminderCommand(text);
   const previewContent = (parsed.cleanedContent.trim() || text.trim()).slice(0, MAX_CHARS);
+  // A timer capture ("pomodoro", "timer for 25 min") preempts destination
+  // routing — Chute runs the countdown itself.
+  const timerPreview = parseTimer(text);
 
   // Where Chute *would* route this capture right now, and why. This is the
   // single decision the preview, the save path, and the teach prompt all share.
@@ -964,6 +968,30 @@ export default function CaptureWindow() {
     }
 
     if (saving) {
+      return;
+    }
+
+    // Timer capture: run a Chute-native countdown instead of routing outward.
+    const timer = overrideDestinations === undefined ? parseTimer(text) : null;
+    if (timer) {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await invoke("start_chute_timer", { seconds: timer.seconds, label: timer.label });
+        setSavedMessage(`${timer.label} started · ${formatCountdown(timer.seconds)}`);
+        window.setTimeout(() => setSavedMessage(""), 1600);
+        resetDraft();
+        if (keepOpen) {
+          requestAnimationFrame(() => inputRef.current?.focus());
+        } else {
+          await invoke("hide_capture_window");
+        }
+      } catch (error) {
+        console.error("Timer start failed", error);
+        setSaveError("Couldn't start the timer.");
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -1617,7 +1645,23 @@ export default function CaptureWindow() {
               </div>
             ) : null}
 
-            {splitActive && captureSplit ? (
+            {timerPreview ? (
+              <div className="smart-preview mb-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="smart-preview-dot" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-medium text-[var(--text)]">
+                      Timer
+                      <span className="codex-muted font-normal"> · {timerPreview.label}</span>
+                    </div>
+                    <div className="codex-muted truncate text-[11px]">
+                      Counts down {formatCountdown(timerPreview.seconds)} in Chute, then rings
+                    </div>
+                  </div>
+                </div>
+                <span className="smart-preview-reason">Looks like a timer</span>
+              </div>
+            ) : splitActive && captureSplit ? (
               <div className="smart-preview mb-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="smart-preview-dot" aria-hidden="true" />

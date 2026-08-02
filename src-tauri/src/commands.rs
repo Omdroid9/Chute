@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::{default_hotkey, tray_tooltip, window, AppState, TRAY_ID};
@@ -486,4 +486,123 @@ end run"#;
     let _ = (calendar, title, notes, start, end, alarm_minutes);
     Err("Apple Calendar is only available on macOS.".to_string())
   }
+}
+
+// ---------------------------------------------------------------------------
+// Chute-native timers — countdown timers/pomodoros handled entirely in-app.
+// A background thread waits out the duration, then fires a system
+// notification + sound and emits `chute://timer-fired`. Tracked in AppState
+// so they can be listed and cancelled. In-memory only: a timer does not
+// survive an app restart (acceptable for short work-session timers).
+// ---------------------------------------------------------------------------
+
+/// A live countdown timer, kept in AppState for listing and cancellation.
+pub struct TimerEntry {
+  pub label: String,
+  pub fire_at_ms: u128,
+  pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ActiveTimer {
+  pub id: String,
+  pub label: String,
+  pub remaining_seconds: i64,
+}
+
+fn epoch_ms() -> u128 {
+  std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_millis())
+    .unwrap_or(0)
+}
+
+#[cfg(target_os = "macos")]
+fn fire_timer_alert(label: &str) {
+  use std::process::Command;
+  let title = format!("Chute — {}", label.replace('\\', " ").replace('"', "'"));
+  let script =
+    format!("display notification \"Time's up\" with title \"{title}\" sound name \"Glass\"");
+  let _ = Command::new("osascript").arg("-e").arg(&script).status();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn fire_timer_alert(_label: &str) {}
+
+/// Start a countdown timer. Returns its id. Fires a notification + sound and
+/// emits `chute://timer-fired` (payload: the label) when it elapses.
+#[tauri::command]
+pub fn start_chute_timer(
+  app: tauri::AppHandle,
+  state: State<'_, AppState>,
+  seconds: u64,
+  label: String,
+) -> Result<String, String> {
+  use std::sync::atomic::{AtomicBool, Ordering};
+  use std::sync::Arc;
+  use std::time::{Duration, Instant};
+
+  let seconds = seconds.clamp(1, 24 * 3600);
+  let id = format!("t{}", epoch_ms());
+  let fire_at_ms = epoch_ms() + (seconds as u128) * 1000;
+  let cancel = Arc::new(AtomicBool::new(false));
+
+  state.timers.lock().unwrap().insert(
+    id.clone(),
+    TimerEntry {
+      label: label.clone(),
+      fire_at_ms,
+      cancel: cancel.clone(),
+    },
+  );
+
+  let id_task = id.clone();
+  let app_task = app.clone();
+  std::thread::spawn(move || {
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    while Instant::now() < deadline {
+      if cancel.load(Ordering::Relaxed) {
+        return;
+      }
+      std::thread::sleep(Duration::from_millis(400));
+    }
+    if cancel.load(Ordering::Relaxed) {
+      return;
+    }
+    app_task
+      .state::<AppState>()
+      .timers
+      .lock()
+      .unwrap()
+      .remove(&id_task);
+    fire_timer_alert(&label);
+    let _ = app_task.emit("chute://timer-fired", label);
+  });
+
+  Ok(id)
+}
+
+#[tauri::command]
+pub fn cancel_chute_timer(state: State<'_, AppState>, id: String) -> Result<(), String> {
+  use std::sync::atomic::Ordering;
+  if let Some(entry) = state.timers.lock().unwrap().remove(&id) {
+    entry.cancel.store(true, Ordering::Relaxed);
+  }
+  Ok(())
+}
+
+#[tauri::command]
+pub fn list_chute_timers(state: State<'_, AppState>) -> Vec<ActiveTimer> {
+  let now = epoch_ms();
+  let timers = state.timers.lock().unwrap();
+  let mut out: Vec<ActiveTimer> = timers
+    .iter()
+    .map(|(id, e)| ActiveTimer {
+      id: id.clone(),
+      label: e.label.clone(),
+      remaining_seconds: ((e.fire_at_ms as i128 - now as i128) / 1000) as i64,
+    })
+    .collect();
+  out.sort_by_key(|t| t.remaining_seconds);
+  out
 }

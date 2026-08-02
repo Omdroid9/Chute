@@ -29,6 +29,8 @@ pub struct AppState {
   pub main_view: Mutex<MainView>,
   /// Suppress focus-loss hide briefly after raising capture (avoids hotkey flash-dismiss).
   pub capture_raise_guard: Mutex<Option<std::time::Instant>>,
+  /// Active Chute-native countdown timers, keyed by id.
+  pub timers: Mutex<std::collections::HashMap<String, commands::TimerEntry>>,
 }
 
 pub fn default_hotkey() -> &'static str {
@@ -117,6 +119,7 @@ fn main() {
       library_hotkey: Mutex::new(initial_library_hotkey.clone()),
       main_view: Mutex::new(MainView::Capture),
       capture_raise_guard: Mutex::new(None),
+      timers: Mutex::new(std::collections::HashMap::new()),
     })
     .plugin(
       tauri_plugin_global_shortcut::Builder::new()
@@ -233,7 +236,10 @@ fn main() {
       commands::open_external_url,
       commands::create_apple_note,
       commands::create_apple_reminder,
-      commands::create_apple_calendar_event
+      commands::create_apple_calendar_event,
+      commands::start_chute_timer,
+      commands::cancel_chute_timer,
+      commands::list_chute_timers
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
