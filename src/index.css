@@ -897,10 +897,22 @@ html[data-theme="dark"] .list-picker-option-active {
 .tour-slide-shell {
   display: flex;
   flex: 1;
+  min-height: 0; /* bound the step area so content can never push the footer */
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+  overflow: hidden;
+}
+
+/* One mock is on screen at a time; hold a steady slot so auto-advance between
+   slides of different heights doesn't jump the copy and dots. */
+.tour-mock-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 9.5rem;
 }
 
 .tour-mock {

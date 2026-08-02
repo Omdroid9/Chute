@@ -330,7 +330,9 @@ function FeaturesTourStep({
 
   return (
     <div className="tour-slide-shell onboard-panel mx-auto w-full">
-      <TourMock slide={slide} key={slide.title} />
+      <div className="tour-mock-stage">
+        <TourMock slide={slide} key={slide.title} />
+      </div>
       <div className="tour-slide-copy max-w-xs" key={slide.title}>
         <h2 className="text-base font-semibold tracking-tight">{slide.title}</h2>
         <p className="codex-muted mt-2 text-xs leading-5">{slide.body}</p>
