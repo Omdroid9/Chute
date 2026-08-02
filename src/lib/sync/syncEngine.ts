@@ -1,6 +1,7 @@
 import { setSetting } from "../db";
 import { createAppleNote } from "./appleNotes";
 import { appleNoteBody } from "./noteFormat";
+import { eventTitle } from "../titles";
 import { createAppleReminder } from "./appleRemindersSync";
 import { createAppleCalendarEvent } from "./appleCalendar";
 import type { Capture } from "../../types";
@@ -197,7 +198,7 @@ async function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<
     await createGoogleTask({
       accessToken,
       listId: config.googleTasksListId!,
-      title: capture.content,
+      title: eventTitle(capture.content),
       notes: `Chute list: ${capture.list_name}`,
       due: capture.reminder_time ?? undefined,
     });
@@ -232,7 +233,7 @@ async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): 
     await createGoogleCalendarEvent({
       accessToken,
       calendarId: config.googleCalendarId!,
-      summary: capture.content,
+      summary: eventTitle(capture.content),
       description: `Chute list: ${capture.list_name}\nTag: ${capture.tag}`,
       reminderTime: capture.reminder_time,
       eventId: calendarEventId(capture.id),
@@ -326,7 +327,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
         () =>
           createAppleReminder({
             list: config.appleRemindersList,
-            title: appleNoteTitle(capture.content),
+            title: eventTitle(capture.content),
             body: appleReminderBody(capture),
             dueDate: capture.reminder_time ?? null,
           }),
@@ -340,7 +341,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
         () =>
           createAppleCalendarEvent({
             calendar: config.appleCalendarName,
-            title: appleNoteTitle(capture.content),
+            title: eventTitle(capture.content),
             notes: appleReminderBody(capture),
             start: capture.reminder_time!,
           }),

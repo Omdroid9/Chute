@@ -98,7 +98,7 @@ const EVENT_ERRAND_REGEX =
 // "by/before/until 5pm" is a deadline: the time bounds the task, it does not
 // reserve the slot. Deadlines are tasks no matter what nouns appear.
 const DEADLINE_REGEX =
-  /\b(?:by|before|until|due)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|eod|end of (?:day|week)|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+  /\b(?:by|before|until|due)\s+(?:the\s+|this\s+|next\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|eod|end of (?:day|week|month)|tonight|today|tomorrow|weekend|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
 
 export interface EventResult {
   isEvent: boolean;
