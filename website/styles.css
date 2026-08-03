@@ -20,8 +20,9 @@
      body, nav, footer, buttons, and the demo window — cleaner at small
      sizes and a pixel-match to the real app's UI. Geist Mono for keys,
      times, and numbers; Instrument Serif italic for the accents. */
-  --font: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Nohemi", var(--font);
+  --font: "Poppins", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Brand display: Apple's rounded system font on Mac, Poppins everywhere else. */
+  --font-display: ui-rounded, "SF Pro Rounded", "Poppins", var(--font);
   --mono: "Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo,
     Consolas, monospace;
   --serif: "Instrument Serif", "Iowan Old Style", "Apple Garamond",
@@ -183,7 +184,7 @@ a {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  font-family: "Nohemi", var(--font);
+  font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.08rem;
   letter-spacing: -0.01em;
@@ -3892,34 +3893,6 @@ main h2 {
    the mock still matches the real app. Self-hosted woff2.
    ===================================================================== */
 
-@font-face {
-  font-family: "Nohemi";
-  src: url("/fonts/nohemi/Nohemi-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Nohemi";
-  src: url("/fonts/nohemi/Nohemi-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Nohemi";
-  src: url("/fonts/nohemi/Nohemi-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Nohemi";
-  src: url("/fonts/nohemi/Nohemi-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
-
 .hero-title,
 main h2,
 .bento-h,
@@ -3945,7 +3918,7 @@ main h2 .accent-serif {
 }
 
 .how-body h2 {
-  font-family: "Nohemi", var(--font);
+  font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -4110,7 +4083,7 @@ main h2 .accent-serif {
 }
 
 .detail-card h3 {
-  font-family: "Nohemi", var(--font);
+  font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 500;
   letter-spacing: -0.005em;

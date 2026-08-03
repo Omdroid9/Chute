@@ -2,46 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Nohemi — the brand display face (self-hosted, matches the marketing site). */
-@font-face {
-  font-family: "Nohemi";
-  src: url("./assets/fonts/nohemi/Nohemi-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Nohemi";
-  src: url("./assets/fonts/nohemi/Nohemi-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Nohemi";
-  src: url("./assets/fonts/nohemi/Nohemi-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Nohemi";
-  src: url("./assets/fonts/nohemi/Nohemi-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
-
 :root {
   /* ----- Typeface system (mirrors marketing site) -----
      Geist for system voice, Geist Mono for keys/numbers/times,
      Instrument Serif italic for the considered moments. */
   --font-sans:
-    "Geist Variable", "Geist", "Inter", "Segoe UI", system-ui, -apple-system,
-    sans-serif;
+    "Poppins", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono:
     "Geist Mono Variable", "Geist Mono", "JetBrains Mono", "SF Mono",
     ui-monospace, Menlo, Consolas, monospace;
   --font-serif:
     "Instrument Serif", "Iowan Old Style", "Apple Garamond", "Baskerville",
     Georgia, serif;
-  --font-display: "Nohemi", var(--font-sans);
+  /* Brand display: Apple's rounded system font on Mac, Poppins everywhere else. */
+  --font-display: ui-rounded, "SF Pro Rounded", "Poppins", system-ui, sans-serif;
 
   font-family: var(--font-sans);
   font-synthesis: none;
@@ -613,8 +587,7 @@ html[data-theme="dark"] .prompt-box:focus-within {
   border: none;
   color: var(--text);
   resize: none;
-  /* Native SF Pro — the capture surface reads like the rest of macOS. */
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .prompt-input::placeholder {
