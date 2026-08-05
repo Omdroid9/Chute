@@ -65,7 +65,7 @@
                     "updater":  {
                                     "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk5Qzc0ODNGODM2N0ZERgpSV1RmZnpiNGczU2NDWWtCRFNrbkZHU0R2d3JxczJKQnVwU3FqV01LWnFaazN6T2RuV3ptMzljcgo=",
                                     "endpoints":  [
-                                                      "https://github.com/Omdroid9/chute/releases/latest/download/latest.json"
+                                                      "https://github.com/Omdroid9/Chute/releases/latest/download/latest.json"
                                                   ]
                                 }
                 }
