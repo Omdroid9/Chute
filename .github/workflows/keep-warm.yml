@@ -1,0 +1,26 @@
+# Keeps the OAuth connection bridge awake. Render's free tier sleeps after
+# ~15 min idle and then takes 60s+ to wake, which makes the first "Connect"
+# in onboarding fail. Pinging /health every ~12 min keeps it warm for beta
+# users. (GitHub cron is best-effort and can run late — pair with an external
+# uptime monitor like UptimeRobot for belt-and-suspenders.)
+name: Keep bridge warm
+
+on:
+  schedule:
+    - cron: "*/12 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping bridge health
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://klyph-auth.onrender.com/health || echo "000")
+            echo "attempt $i → HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "bridge did not return 200 after 3 attempts"
+          exit 1

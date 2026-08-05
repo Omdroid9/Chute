@@ -43,20 +43,31 @@ export async function startConnectSession(
  * ~50s before giving up, and keep the error human — developer instructions
  * belong in dev builds only.
  */
+function timeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 export async function assertConnectBackendReachable(
   backendBaseUrl: string,
 ): Promise<void> {
   const baseUrl = backendBaseUrl.replace(/\/$/, "");
-  const attempts = 4;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+  // Render's free tier sleeps and can take 60s+ to spin back up, so keep
+  // polling /health for ~100s before giving up — a cold start should never
+  // surface as an error. Each request gets its own 25s cap so a hung socket
+  // can't stall the whole window.
+  const deadline = Date.now() + 100_000;
+  while (Date.now() < deadline) {
     try {
-      await httpRequest(`${baseUrl}/health`, { method: "GET" });
+      await httpRequest(`${baseUrl}/health`, { method: "GET", signal: timeoutSignal(25_000) });
       return;
     } catch {
-      if (attempt < attempts) {
-        await new Promise((resolve) => setTimeout(resolve, 15_000));
-      }
+      // wake-up in progress — wait and retry until the deadline.
     }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(9_000, remaining)));
   }
   const devHint = import.meta.env.DEV
     ? ` (dev: is the bridge running? npm run auth:dev, or check ${baseUrl})`
