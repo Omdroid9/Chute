@@ -25,6 +25,9 @@
                             "identifier":  "http:default",
                             "allow":  [
                                           {
+                                              "url":  "https://klyph-auth.onrender.com/*"
+                                          },
+                                          {
                                               "url":  "https://hooks.slack.com/*"
                                           },
                                           {
