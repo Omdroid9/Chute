@@ -183,8 +183,18 @@ pub fn create_apple_reminder(
   set hasDue to item 4 of argv
   tell application "Reminders"
     launch
-    if not (exists list listName) then
-      make new list with properties {name:listName}
+    -- Find the list by looping and holding a direct object reference. Probing
+    -- `exists list <name>` / `list <name>` by-name specifier crashes the
+    -- Reminders scripting bridge on macOS 26 (NSExistsCommand / NSWhoseSpecifier).
+    set theList to missing value
+    repeat with aList in every list
+      if (name of aList) is listName then
+        set theList to aList
+        exit repeat
+      end if
+    end repeat
+    if theList is missing value then
+      set theList to (make new list with properties {name:listName})
     end if
     if hasDue is "true" then
       set yr to (item 5 of argv) as integer
@@ -200,12 +210,18 @@ pub fn create_apple_reminder(
       set hours of dueDate to hr
       set minutes of dueDate to mn
       set seconds of dueDate to sc
-      make new reminder at list listName with properties {name:reminderTitle, body:reminderBody, due date:dueDate}
+      tell theList to make new reminder with properties {name:reminderTitle, body:reminderBody, due date:dueDate}
     else
-      make new reminder at list listName with properties {name:reminderTitle, body:reminderBody}
+      tell theList to make new reminder with properties {name:reminderTitle, body:reminderBody}
     end if
   end tell
 end run"#;
+
+    // Launch Reminders in the background first (no focus steal) so the script
+    // never races a cold/stale app and fails with -600/-609.
+    let _ = Command::new("open")
+      .args(["-g", "-j", "-a", "Reminders"])
+      .status();
 
     let mut cmd = Command::new("osascript");
     cmd
@@ -296,15 +312,27 @@ pub fn create_apple_note(folder: String, title: String, body: String) -> Result<
   set noteBody to item 3 of argv
   tell application "Notes"
     launch
-    set targetAccount to default account
-    tell targetAccount
-      if not (exists folder folderName) then
-        make new folder with properties {name:folderName}
+    tell default account
+      -- Loop for the folder and keep a direct reference; the by-name
+      -- `exists folder <name>` specifier is the pattern that crashes the
+      -- Reminders/Notes scripting bridge on macOS 26.
+      set theFolder to missing value
+      repeat with aFolder in every folder
+        if (name of aFolder) is folderName then
+          set theFolder to aFolder
+          exit repeat
+        end if
+      end repeat
+      if theFolder is missing value then
+        set theFolder to (make new folder with properties {name:folderName})
       end if
-      make new note at folder folderName with properties {body:noteBody}
+      tell theFolder to make new note with properties {body:noteBody}
     end tell
   end tell
 end run"#;
+
+    // Launch Notes in the background first so the script never races a cold app.
+    let _ = Command::new("open").args(["-g", "-j", "-a", "Notes"]).status();
 
     let mut child = Command::new("osascript")
       .arg("-")
@@ -397,13 +425,27 @@ pub fn create_apple_calendar_event(
   set seconds of endDate to (item 16 of argv) as integer
   tell application "Calendar"
     launch
+    -- Resolve the calendar by looping and holding a direct reference. The
+    -- by-name `exists calendar <name>` / `calendar <name>` and `whose`
+    -- specifiers are the scripting pattern that crashes on macOS 26.
+    set targetCal to missing value
     if calName is "" then
-      set targetCal to first calendar whose writable is true
+      repeat with aCal in every calendar
+        if (writable of aCal) is true then
+          set targetCal to aCal
+          exit repeat
+        end if
+      end repeat
     else
-      if not (exists calendar calName) then
-        make new calendar with properties {name:calName}
+      repeat with aCal in every calendar
+        if (name of aCal) is calName then
+          set targetCal to aCal
+          exit repeat
+        end if
+      end repeat
+      if targetCal is missing value then
+        set targetCal to (make new calendar with properties {name:calName})
       end if
-      set targetCal to calendar calName
     end if
     tell targetCal
       set newEvent to make new event with properties {summary:evtSummary, start date:startDate, end date:endDate, description:evtBody}
