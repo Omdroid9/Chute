@@ -82,29 +82,34 @@ export async function pollConnectSession(
 ): Promise<PollSessionResponse> {
   const response = await httpRequest(statusUrl, {
     method: "GET",
+    signal: timeoutSignal(15_000),
   });
   return (await response.json()) as PollSessionResponse;
 }
 
 export async function waitForConnectCompletion(
   statusUrl: string,
-  timeoutMs = 120_000,
-  intervalMs = 2_000,
+  timeoutMs = 180_000,
+  intervalMs = 1_200,
 ): Promise<PollSessionResponse> {
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const state = await pollConnectSession(statusUrl);
-    if (state.status === "completed" || state.status === "failed") {
-      return state;
+    try {
+      const state = await pollConnectSession(statusUrl);
+      if (state.status === "completed" || state.status === "failed") {
+        return state;
+      }
+    } catch {
+      // A single dropped poll (slow socket, brief blip) shouldn't abort the
+      // wait — keep polling until the browser sign-in lands or we time out.
     }
-
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 
   return {
     status: "failed",
-    message: "Timed out waiting for OAuth callback. Please try again.",
+    message: "Timed out waiting for the browser sign-in. Press Connect to try again.",
   };
 }
 
