@@ -26,15 +26,29 @@ export async function startConnectSession(
   provider: ConnectProvider,
 ): Promise<StartSessionResponse> {
   const baseUrl = backendBaseUrl.replace(/\/$/, "");
-  const response = await httpRequest(`${baseUrl}/api/connect/start`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ provider }),
-  });
-
-  return (await response.json()) as StartSessionResponse;
+  // Starting the session is also the reachability check: no separate pre-flight
+  // round-trip, so the browser opens the instant the session is ready. When the
+  // bridge is warm this returns in ~0.3s; when Render has spun it down, retry
+  // (the request wakes it) for ~100s rather than erroring on the cold start.
+  const deadline = Date.now() + 100_000;
+  for (;;) {
+    try {
+      const response = await httpRequest(`${baseUrl}/api/connect/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+        signal: timeoutSignal(30_000),
+      });
+      return (await response.json()) as StartSessionResponse;
+    } catch {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          "Could not reach the connection service — it may still be waking up. Press Connect to try again.",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+    }
+  }
 }
 
 /**

@@ -8,7 +8,6 @@ import {
 } from "../lib/integrations/connectionStatus";
 import { describeRule } from "../lib/integrations/captureRouting";
 import {
-  assertConnectBackendReachable,
   getConnectProvidersConfig,
   startConnectSession,
   waitForConnectCompletion,
@@ -377,7 +376,6 @@ export default function SettingsPanel() {
           `${label} is not configured on OAuth backend. Missing: ${configState.missing.join(", ")}`,
         );
       }
-      await assertConnectBackendReachable(baseUrl);
       const start = await startConnectSession(baseUrl, provider);
 
       await invoke("open_external_url", { url: start.authorizeUrl });

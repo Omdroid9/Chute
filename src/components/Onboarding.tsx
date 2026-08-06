@@ -6,7 +6,6 @@ import { useAppStore } from "../store/useAppStore";
 import { testAppleNotes } from "../lib/sync/appleNotes";
 import { isMacOS } from "../lib/platform";
 import {
-  assertConnectBackendReachable,
   getConnectProvidersConfig,
   startConnectSession,
   waitForConnectCompletion,
@@ -457,7 +456,6 @@ export default function Onboarding({ onDone }: OnboardingProps) {
       if (!providerConfig[provider].configured) {
         throw new Error(`${label} isn't set up on the backend yet (${providerConfig[provider].missing.join(", ")}).`);
       }
-      await assertConnectBackendReachable(backendUrl);
       const start = await startConnectSession(backendUrl, provider);
       await invoke("open_external_url", { url: start.authorizeUrl });
       setMessage(`Finish signing in to ${label} in your browser\u2026`);
