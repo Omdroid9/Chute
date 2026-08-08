@@ -979,19 +979,69 @@ if (summonOverlay) {
     }
   }
 
+  // Example prompts that route to different destinations — cycled as the
+  // placeholder so the sorting is discoverable, not just "everything → Notes".
+  const SUMMON_EXAMPLES = [
+    "call mom tomorrow at 5pm",
+    "lunch with Sarah friday 1pm",
+    "remind me to pay rent",
+    "ideas for the launch video",
+    "should we charge per seat or flat?",
+  ];
+  const SUMMON_DEST = { reminders: "Reminders", notes: "Apple Notes", calendar: "Calendar", slack: "Slack" };
+  let placeholderTimer = null;
+  let placeholderIdx = 0;
+  let summonSending = false;
+
+  function cyclePlaceholder() {
+    if (summonOverlay.hidden || summonInput.value) return;
+    summonInput.setAttribute("placeholder", `Try: “${SUMMON_EXAMPLES[placeholderIdx % SUMMON_EXAMPLES.length]}”`);
+    placeholderIdx += 1;
+  }
+
+  // Enter "files" the capture: light the destination, flash a sent confirmation,
+  // then tuck the window away — the same beat as the real app (nothing is saved).
+  function fileSummon() {
+    const text = summonInput.value.trim();
+    if (!text || summonSending) return;
+    summonSending = true;
+    const route = demoRoute(text);
+    const destKey = route && route.chips.length ? route.chips[0] : "notes";
+    const dest = SUMMON_DEST[destKey] || "Apple Notes";
+    summonChips.forEach((chip) => chip.classList.toggle("is-active", chip.dataset.summonChip === destKey));
+    summonTime.hidden = true;
+    summonReasonText.innerHTML = `<span class="summon-sent-check">✓</span> Sent to <strong>${dest}</strong>`;
+    summonReason.hidden = false;
+    summonOverlay.classList.add("is-sent");
+    summonInput.blur();
+    window.setTimeout(() => {
+      closeSummon();
+      window.setTimeout(() => {
+        summonOverlay.classList.remove("is-sent");
+        summonSending = false;
+      }, 300);
+    }, prefersReduced ? 200 : 780);
+  }
+
   function openSummon() {
     if (!summonOverlay.hidden) return;
     lastFocus = document.activeElement;
     summonOverlay.hidden = false;
     requestAnimationFrame(() => summonOverlay.classList.add("is-open"));
     summonInput.value = "";
+    summonOverlay.classList.remove("is-sent");
+    summonSending = false;
     renderSummon();
     summonInput.focus();
+    cyclePlaceholder();
+    if (placeholderTimer) window.clearInterval(placeholderTimer);
+    placeholderTimer = window.setInterval(cyclePlaceholder, 2600);
   }
 
   function closeSummon() {
     if (summonOverlay.hidden) return;
     summonOverlay.classList.remove("is-open");
+    if (placeholderTimer) window.clearInterval(placeholderTimer);
     window.setTimeout(() => {
       summonOverlay.hidden = true;
       if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
@@ -1012,6 +1062,12 @@ if (summonOverlay) {
   });
 
   summonInput.addEventListener("input", renderSummon);
+  summonInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      fileSummon();
+    }
+  });
   summonOverlay.querySelector("[data-summon-close]").addEventListener("click", closeSummon);
   summonOpeners.forEach((el) => el.addEventListener("click", openSummon));
   if (summonPill && window.matchMedia("(min-width: 900px) and (hover: hover)").matches) {

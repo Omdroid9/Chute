@@ -4597,6 +4597,34 @@ main h2 .accent-serif {
   display: none !important;
 }
 
+/* "Sent" confirmation — a quick success beat when Enter files a capture */
+.summon-overlay.is-sent .summon-window,
+.summon-overlay.is-sent .routing-demo-window {
+  border-color: rgba(110, 231, 160, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(110, 231, 160, 0.25),
+    0 0 40px rgba(110, 231, 160, 0.22),
+    0 30px 80px rgba(0, 0, 0, 0.55);
+  transform: translateY(-4px) scale(1.006);
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.summon-overlay.is-sent .routing-demo-reason {
+  color: #8fe0b0;
+}
+.summon-sent-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05em;
+  height: 1.05em;
+  margin-right: 0.15em;
+  border-radius: 999px;
+  background: #6ee7a0;
+  color: #06301c;
+  font-size: 0.82em;
+  font-weight: 700;
+}
+
 /* --- Spec strip: the facts, set like an instrument panel --- */
 .spec-strip {
   max-width: var(--max);
