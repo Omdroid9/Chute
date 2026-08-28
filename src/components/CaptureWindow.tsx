@@ -163,6 +163,19 @@ function destinationLabels(value: CaptureDestinations): string[] {
     .map((key) => DESTINATION_LABELS[key]);
 }
 
+/** Drop any target that isn't actually reachable (unconnected cloud app, or an
+ * Apple app off macOS) so a capture can never be sent somewhere it can't land. */
+function onlyAvailableDestinations(
+  selected: CaptureDestinations,
+  available: CaptureDestinations,
+): CaptureDestinations {
+  const next = { ...selected };
+  for (const key of Object.keys(next) as DestinationKey[]) {
+    next[key] = next[key] && available[key];
+  }
+  return next;
+}
+
 function hasReminderCommand(value: string): boolean {
   return REMINDER_COMMAND_REGEX.test(value);
 }
@@ -430,6 +443,12 @@ export default function CaptureWindow() {
   const previewDestinationLabels = useMemo(
     () => destinationLabels(previewDestinations),
     [previewDestinations],
+  );
+  // What's actually reachable right now: cloud apps only once connected, Apple
+  // apps only on macOS. Gates both the Send-to row and the save path.
+  const liveAvailable = useMemo(
+    () => (integrationSettings ? availableDestinations(integrationSettings) : null),
+    [integrationSettings],
   );
   const previewPrimaryDestination = previewDestinationLabels[0] ?? "Local only";
   const previewTitle = firstLineTitle(previewContent);
@@ -906,15 +925,18 @@ export default function CaptureWindow() {
 
   function enableAllDestinations() {
     const base = destinationsTouched ? destinations : previewDestinations;
+    // "All" means every *connected* app — never light up a destination the
+    // user hasn't set up, which would just fail on send.
+    const avail = liveAvailable;
     setDestinations({
       ...base,
-      slack: true,
-      discord: true,
-      notion: true,
-      googleTasks: true,
-      googleCalendar: true,
-      appleReminders: IS_MACOS ? true : base.appleReminders,
-      reminders: IS_MACOS ? true : base.reminders,
+      slack: avail?.slack ?? false,
+      discord: avail?.discord ?? false,
+      notion: avail?.notion ?? false,
+      googleTasks: avail?.googleTasks ?? false,
+      googleCalendar: avail?.googleCalendar ?? false,
+      appleReminders: (avail?.appleReminders ?? IS_MACOS) ? true : base.appleReminders,
+      reminders: (avail?.reminders ?? IS_MACOS) ? true : base.reminders,
     });
     setDestinationsTouched(true);
   }
@@ -1021,7 +1043,14 @@ export default function CaptureWindow() {
         });
 
       const usedSuggestion = overrideDestinations === undefined && !destinationsTouched;
-      const finalDestinations = overrideDestinations ?? (destinationsTouched ? destinations : decision.destinations);
+      const requestedDestinations =
+        overrideDestinations ?? (destinationsTouched ? destinations : decision.destinations);
+      // Final safety net: even a stale manual pick (e.g. a draft that selected
+      // Discord before it was disconnected) can never send somewhere unreachable.
+      const finalDestinations = onlyAvailableDestinations(
+        requestedDestinations,
+        availableDestinations(settings),
+      );
       const routingSource = usedSuggestion ? decision.source : "manual";
       const routingReason = usedSuggestion ? decision.reason : "You chose these destinations";
 
@@ -1822,17 +1851,26 @@ export default function CaptureWindow() {
             </span>
             {TARGET_META.map((target) => {
               const active = previewDestinations[target.key];
+              // Connection-aware: a cloud app is only selectable once connected;
+              // Apple apps only on macOS. Falls back to the platform gate while
+              // settings are still loading.
+              const isAvailable = liveAvailable ? liveAvailable[target.key] : target.available;
+              const reason = isAvailable
+                ? target.label
+                : target.available
+                  ? `Connect ${target.label} in Settings to send here.`
+                  : `${target.label} is only available on macOS.`;
               return (
                 <button
                   key={target.key}
                   type="button"
-                  disabled={!target.available}
-                  title={target.available ? target.label : `${target.label} is only available on macOS.`}
+                  disabled={!isAvailable}
+                  title={reason}
                   onClick={() => toggleDestination(target.key)}
                   className={[
                     "whitespace-nowrap rounded-full border px-2 py-1 text-[11px] transition",
-                    active ? "codex-chip-active" : "codex-chip",
-                    !target.available ? "cursor-not-allowed opacity-45" : "",
+                    active && isAvailable ? "codex-chip-active" : "codex-chip",
+                    !isAvailable ? "cursor-not-allowed opacity-45" : "",
                   ].join(" ")}
                 >
                   {target.label}
