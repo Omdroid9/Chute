@@ -31,6 +31,7 @@ function App() {
   const [initError, setInitError] = useState<string | null>(null);
   const [mainView, setMainView] = useState<MainView>(() => (forceOnboarding ? "settings" : "capture"));
   const [needsOnboarding, setNeedsOnboarding] = useState(forceOnboarding);
+  const [replayOnboarding, setReplayOnboarding] = useState(false);
   const windowLabel = useMemo(
     () => (isTauriRuntime ? getCurrentWebviewWindow().label : "main"),
     [isTauriRuntime],
@@ -114,6 +115,15 @@ function App() {
       setMainView("settings");
     });
 
+    // "Replay tour" from Settings → General re-runs the onboarding flow in
+    // place. Onboarding's own mount resizes the window; replay mode keeps the
+    // user's theme and returns to Settings when finished.
+    const unlistenReplay = listen("chute://replay-onboarding", () => {
+      setMainView("settings");
+      setReplayOnboarding(true);
+      setNeedsOnboarding(true);
+    });
+
     const unlistenSecondInstance = listen("chute://second-instance", () => {
       void (async () => {
         const onboardingComplete = await getSetting("onboarding_complete");
@@ -133,6 +143,7 @@ function App() {
       unlistenHistory.then((dispose) => dispose()).catch(() => {});
       unlistenCapture.then((dispose) => dispose()).catch(() => {});
       unlistenSettings.then((dispose) => dispose()).catch(() => {});
+      unlistenReplay.then((dispose) => dispose()).catch(() => {});
       unlistenSecondInstance.then((dispose) => dispose()).catch(() => {});
     };
   }, [forceOnboarding, isMainWindow, isTauriRuntime]);
@@ -400,7 +411,13 @@ function App() {
     content = <LibraryWindow />;
   } else if (mainView === "settings") {
     content = needsOnboarding ? (
-      <Onboarding onDone={() => setNeedsOnboarding(false)} />
+      <Onboarding
+        replay={replayOnboarding}
+        onDone={() => {
+          setNeedsOnboarding(false);
+          setReplayOnboarding(false);
+        }}
+      />
     ) : (
       <SettingsPanel />
     );

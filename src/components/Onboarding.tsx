@@ -355,9 +355,13 @@ function FeaturesTourStep({
 
 interface OnboardingProps {
   onDone: () => void;
+  /** True when re-run from Settings → General, vs. the genuine first launch.
+   * On replay we don't reset the theme and we return to Settings (not the
+   * tray) when finished. */
+  replay?: boolean;
 }
 
-export default function Onboarding({ onDone }: OnboardingProps) {
+export default function Onboarding({ onDone, replay = false }: OnboardingProps) {
   const setTheme = useAppStore((state) => state.setTheme);
   const [step, setStep] = useState(1);
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
@@ -388,9 +392,13 @@ export default function Onboarding({ onDone }: OnboardingProps) {
     // Spotlight placement it would otherwise inherit.
     void invoke("show_onboarding_window").catch(() => {});
 
-    document.documentElement.dataset.theme = "dark";
-    setTheme("dark");
-    void setSetting("theme", "dark");
+    // First run defaults to dark; a replay must not overwrite the theme the
+    // user has since chosen.
+    if (!replay) {
+      document.documentElement.dataset.theme = "dark";
+      setTheme("dark");
+      void setSetting("theme", "dark");
+    }
 
     void (async () => {
       const saved = await getSettings(["integration_backend_url", "hotkey"]);
@@ -412,7 +420,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
         setProviderConfig(DEFAULT_PROVIDER_CONFIG);
       }
     })().catch(console.error);
-  }, [refreshConnected, setTheme]);
+  }, [refreshConnected, setTheme, replay]);
 
   useEffect(() => {
     if (step !== 2) {
@@ -509,7 +517,9 @@ export default function Onboarding({ onDone }: OnboardingProps) {
     try {
       await setSetting("onboarding_complete", "true");
       onDone();
-      await invoke("hide_capture_window");
+      // First run tucks the window away to the tray; a replay came from
+      // Settings, so resize back to Settings instead of vanishing.
+      await invoke(replay ? "open_settings_window" : "hide_capture_window");
     } catch (error) {
       console.error(error);
       setBusy("");

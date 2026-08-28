@@ -539,6 +539,20 @@ export default function SettingsPanel() {
         >
           Save General Settings
         </button>
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
+          <div className="min-w-0">
+            <div className="text-sm">Welcome tour</div>
+            <div className="codex-muted text-[11px]">Replay the intro and app walkthrough.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void emit("chute://replay-onboarding")}
+            className="codex-btn-soft shrink-0 rounded-lg px-3 py-1.5 text-xs"
+          >
+            Replay tour
+          </button>
+        </div>
       </section>
       ) : null}
 
