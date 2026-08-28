@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getSettings, setSetting } from "../lib/db";
@@ -7,6 +7,7 @@ import { testAppleNotes } from "../lib/sync/appleNotes";
 import { isMacOS } from "../lib/platform";
 import {
   getConnectProvidersConfig,
+  isConnectCancelled,
   startConnectSession,
   waitForConnectCompletion,
   type ConnectProvider,
@@ -368,6 +369,8 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   const [hotkeyTried, setHotkeyTried] = useState(false);
   const [appleTested, setAppleTested] = useState(false);
   const [featureSlide, setFeatureSlide] = useState(0);
+  // Held so the user can Cancel a connect that's stuck waiting on the browser.
+  const connectAbort = useRef<AbortController | null>(null);
 
   const hotkeyParts = useMemo(() => hotkey.split("+").map((part) => prettyKey(part.trim())), [hotkey]);
 
@@ -450,16 +453,18 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   }, [step]);
 
   async function connectProvider(provider: ConnectProvider, label: string) {
+    const controller = new AbortController();
+    connectAbort.current = controller;
     setBusy(`connect-${provider}`);
     setMessage("");
     try {
       if (!providerConfig[provider].configured) {
         throw new Error(`${label} isn't set up on the backend yet (${providerConfig[provider].missing.join(", ")}).`);
       }
-      const start = await startConnectSession(backendUrl, provider);
+      const start = await startConnectSession(backendUrl, provider, controller.signal);
       await invoke("open_external_url", { url: start.authorizeUrl });
-      setMessage(`Finish signing in to ${label} in your browser\u2026`);
-      const completion = await waitForConnectCompletion(start.statusUrl);
+      setMessage(`Finish signing in to ${label} in your browser\u2026 (or press Cancel to stop)`);
+      const completion = await waitForConnectCompletion(start.statusUrl, undefined, undefined, controller.signal);
       if (completion.status !== "completed" || !completion.settings) {
         throw new Error(completion.message ?? `${label} connection didn't finish.`);
       }
@@ -470,10 +475,19 @@ export default function Onboarding({ onDone }: OnboardingProps) {
       setMessage(`${label} connected.`);
       await emit("chute://request-sync");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      if (isConnectCancelled(error)) {
+        setMessage(`${label} sign-in cancelled \u2014 you can try again anytime.`);
+      } else {
+        setMessage(error instanceof Error ? error.message : String(error));
+      }
     } finally {
+      connectAbort.current = null;
       setBusy("");
     }
+  }
+
+  function cancelConnect() {
+    connectAbort.current?.abort();
   }
 
   async function sendAppleTest() {
@@ -551,9 +565,10 @@ export default function Onboarding({ onDone }: OnboardingProps) {
               <div className="onboard-connect-head mb-5 shrink-0">
                 <h2 className="text-lg font-semibold tracking-tight">Connect your apps</h2>
                 <p className="codex-muted mx-auto mt-2 max-w-sm text-xs leading-5">
-                  Sign in so Chute can send captures outward — each Connect opens your browser
-                  for a normal sign-in. Connected apps auto-enable under Send to when you capture.
-                  The first Connect can take up to a minute while the service wakes up.
+                  Sign in so Chute can send captures to these apps — each Connect opens your
+                  browser. Your Mac's Reminders, Notes &amp; Calendar are built in already
+                  (below), so there's nothing to connect for those. Connected apps auto-enable
+                  under Send to. The first Connect can take up to a minute while the service wakes up.
                 </p>
               </div>
 
@@ -579,6 +594,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                 {PROVIDERS.map((provider) => {
                   const isConnected = connected[provider.id];
                   const configured = providerConfig[provider.id].configured;
+                  const isBusyThis = busy === `connect-${provider.id}`;
                   return (
                     <div
                       key={provider.id}
@@ -596,19 +612,17 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                       </div>
                       <button
                         type="button"
-                        disabled={busy.length > 0 || isConnected || !configured}
-                        onClick={() => void connectProvider(provider.id, provider.label)}
+                        disabled={(busy.length > 0 && !isBusyThis) || isConnected || !configured}
+                        onClick={() =>
+                          isBusyThis ? cancelConnect() : void connectProvider(provider.id, provider.label)
+                        }
                         className={[
                           "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed",
-                          isConnected ? "codex-btn-soft opacity-70" : "codex-btn",
-                          busy === `connect-${provider.id}` ? "opacity-60" : "",
+                          isConnected || isBusyThis ? "codex-btn-soft" : "codex-btn",
+                          isConnected ? "opacity-70" : "",
                         ].join(" ")}
                       >
-                        {isConnected
-                          ? "Connected"
-                          : busy === `connect-${provider.id}`
-                            ? "Waiting\u2026"
-                            : "Connect"}
+                        {isConnected ? "Connected" : isBusyThis ? "Cancel" : "Connect"}
                       </button>
                     </div>
                   );
@@ -618,12 +632,12 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                   <div className="flex min-w-0 items-center gap-3">
                     <ProviderLogo id="apple-notes" size={38} />
                     <div className="min-w-0">
-                      <div className="text-sm font-medium">Apple Notes</div>
+                      <div className="text-sm font-medium">Apple Reminders · Notes · Calendar</div>
                       <div className="codex-muted text-[11px]">
                         {appleDone
-                          ? "Working"
+                          ? "Working — no sign-in needed"
                           : IS_MACOS
-                            ? "Built in — no OAuth needed"
+                            ? "Built in on your Mac — connect nothing, they just work"
                             : "Available on macOS only"}
                       </div>
                     </div>

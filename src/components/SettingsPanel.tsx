@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { deleteRoutingRule, getSettings, listRoutingRules, setSetting } from "../lib/db";
@@ -9,6 +9,7 @@ import {
 import { describeRule } from "../lib/integrations/captureRouting";
 import {
   getConnectProvidersConfig,
+  isConnectCancelled,
   startConnectSession,
   waitForConnectCompletion,
   type ConnectProvider,
@@ -133,6 +134,8 @@ export default function SettingsPanel() {
   const [status, setStatus] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  // Held so the user can Cancel a connect that's stuck waiting on the browser.
+  const connectAbort = useRef<AbortController | null>(null);
   const [parserDebugInput, setParserDebugInput] = useState("testing for tomorrow");
   const [routingRules, setRoutingRules] = useState<RoutingRule[]>([]);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
@@ -365,6 +368,8 @@ export default function SettingsPanel() {
   }
 
   async function connectProvider(provider: ConnectProvider, label: string) {
+    const controller = new AbortController();
+    connectAbort.current = controller;
     setBusyAction(`connect-${provider}`);
     setSyncStatus("");
 
@@ -376,12 +381,12 @@ export default function SettingsPanel() {
           `${label} is not configured on OAuth backend. Missing: ${configState.missing.join(", ")}`,
         );
       }
-      const start = await startConnectSession(baseUrl, provider);
+      const start = await startConnectSession(baseUrl, provider, controller.signal);
 
       await invoke("open_external_url", { url: start.authorizeUrl });
-      setSyncStatus(`Browser opened for ${label}. Finish sign-in there...`);
+      setSyncStatus(`Browser opened for ${label}. Finish sign-in there — or press Cancel to stop.`);
 
-      const completion = await waitForConnectCompletion(start.statusUrl);
+      const completion = await waitForConnectCompletion(start.statusUrl, undefined, undefined, controller.signal);
 
       if (completion.status !== "completed" || !completion.settings) {
         throw new Error(completion.message ?? `${label} connect failed.`);
@@ -395,11 +400,20 @@ export default function SettingsPanel() {
       setSyncStatus(`${label} connected.`);
       await emit("chute://request-sync");
     } catch (error) {
-      console.error(error);
-      setSyncStatus(`Connect failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (isConnectCancelled(error)) {
+        setSyncStatus(`${label} sign-in cancelled.`);
+      } else {
+        console.error(error);
+        setSyncStatus(`Connect failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
+      connectAbort.current = null;
       setBusyAction("");
     }
+  }
+
+  function cancelConnect() {
+    connectAbort.current?.abort();
   }
 
   async function disconnectProvider(provider: ConnectProvider, label: string) {
@@ -718,14 +732,24 @@ export default function SettingsPanel() {
                 ) : null}
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={busyAction.length > 0 || !providerConfig[provider].configured}
-                  onClick={() => void connectProvider(provider, label)}
-                  className="codex-btn rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {connected ? "Reconnect" : "Connect"}
-                </button>
+                {busyAction === `connect-${provider}` ? (
+                  <button
+                    type="button"
+                    onClick={cancelConnect}
+                    className="codex-btn-soft rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busyAction.length > 0 || !providerConfig[provider].configured}
+                    onClick={() => void connectProvider(provider, label)}
+                    className="codex-btn rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {connected ? "Reconnect" : "Connect"}
+                  </button>
+                )}
                 {connected && provider === "slack" ? (
                   <button
                     type="button"
