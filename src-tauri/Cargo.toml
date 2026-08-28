@@ -1,6 +1,6 @@
 [package]
 name = "chute"
-version = "0.2.1"
+version = "0.2.2"
 description = "Chute desktop app"
 authors = ["Chute"]
 license = ""
