@@ -98,9 +98,12 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
       }
     });
 
-  if let Some(icon) = app.default_window_icon() {
-    tray_builder = tray_builder.icon(icon.clone());
-  }
+  // Dedicated monochrome menu-bar glyph rendered as a template image, so macOS
+  // tints it correctly for light/dark menu bars — instead of shrinking the
+  // full-color app icon, which looked muddy at menu-bar size.
+  tray_builder = tray_builder
+    .icon(tauri::include_image!("icons/tray-32.png"))
+    .icon_as_template(true);
 
   tray_builder.build(app)?;
   Ok(())
