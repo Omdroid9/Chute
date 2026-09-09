@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Chute</title>
+  <meta name="description" content="How Chute handles your data — including Google user data." />
+  <link rel="canonical" href="https://usechute.com/privacy.html" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #07070a; --panel: #15151a; --text: rgba(245,245,248,0.94);
+      --text-strong: #fafafd; --muted: rgba(245,245,248,0.6);
+      --accent: #7aa9ee; --border: rgba(245,245,248,0.1);
+      --font: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-display: ui-rounded, "SF Pro Rounded", "Poppins", var(--font);
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: var(--font); line-height: 1.7; font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 3.5rem 1.25rem 5rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .brand {
+      font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+      color: var(--text-strong); letter-spacing: -0.01em;
+    }
+    .home { display: inline-block; margin-bottom: 2.5rem; color: var(--muted); font-size: 0.85rem; }
+    h1 { font-family: var(--font-display); font-weight: 600; font-size: 2rem; color: var(--text-strong); margin: 0 0 0.4rem; letter-spacing: -0.02em; }
+    .updated { color: var(--muted); font-size: 0.85rem; margin: 0 0 2.5rem; }
+    h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.2rem; color: var(--text-strong); margin: 2.5rem 0 0.6rem; }
+    p, li { color: var(--text); }
+    ul { padding-left: 1.2rem; }
+    li { margin: 0.35rem 0; }
+    .callout {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1rem 1.25rem; margin: 1.5rem 0; color: var(--muted); font-size: 0.95rem;
+    }
+    .callout strong { color: var(--text-strong); font-weight: 500; }
+    footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="home" href="/">← <span class="brand">Chute</span></a>
+
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: September 9, 2026</p>
+
+    <p>
+      Chute is a menu-bar app for macOS that helps you capture a thought once and send it
+      to the right place — Apple Reminders, Notes, and Calendar on your Mac, and connected
+      services such as Slack, Discord, Notion, and Google. This policy explains what data
+      Chute handles and how.
+    </p>
+
+    <div class="callout">
+      <strong>The short version:</strong> Chute is local-first. Your captures live on your
+      own Mac. Chute only sends a capture outward when you route it to a service you have
+      connected — and only to that service. We don't sell your data, and we don't run
+      advertising or profiling on it.
+    </div>
+
+    <h2>What Chute stores on your device</h2>
+    <p>
+      Your captures, lists, tags, settings, and the access tokens for services you connect
+      are stored locally on your Mac (in the app's application-support folder). This data
+      stays on your device. Removing the app removes it.
+    </p>
+
+    <h2>Connecting Google (Calendar &amp; Tasks)</h2>
+    <p>
+      If you choose to connect Google, Chute requests permission to your Google Calendar and
+      Google Tasks so it can create and sync the events and tasks you capture. Specifically:
+    </p>
+    <ul>
+      <li><strong>Google Calendar</strong> — to create calendar events from captures that look like appointments, and to keep them in sync.</li>
+      <li><strong>Google Tasks</strong> — to create tasks from captures that look like to-dos.</li>
+    </ul>
+    <p>
+      Chute uses this access only to carry out the actions you initiate. It does not read,
+      collect, or store your calendar or task history beyond what is needed to create and
+      sync the items you capture. The sign-in itself is brokered by our connection service
+      (klyph-auth.onrender.com), which facilitates the OAuth handshake and returns the
+      access token to your copy of Chute; the token is then stored on your device.
+    </p>
+
+    <div class="callout">
+      <strong>Limited Use.</strong> Chute's use and transfer of information received from
+      Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+      including the Limited Use requirements. We do not use Google user data for advertising,
+      and we do not sell it or share it with third parties except to provide the feature you
+      asked for.
+    </div>
+
+    <h2>Other connected services</h2>
+    <p>
+      Slack, Discord, and Notion work the same way: Chute stores the credential you authorize
+      on your device and uses it only to deliver captures you route to that service. Apple
+      Reminders, Notes, and Calendar are handled entirely on your Mac through macOS and need
+      no account or token.
+    </p>
+
+    <h2>What we don't do</h2>
+    <ul>
+      <li>We don't sell or rent your data to anyone.</li>
+      <li>We don't use your captures or connected-account data for advertising or profiling.</li>
+      <li>We don't send your captures anywhere except the services you explicitly connect and route to.</li>
+    </ul>
+
+    <h2>Updates</h2>
+    <p>
+      Chute checks for new versions so it can update itself. This check contacts our software
+      release host and does not include your captures or personal content.
+    </p>
+
+    <h2>Revoking access &amp; deleting data</h2>
+    <ul>
+      <li>Disconnect any service from Chute's Settings at any time.</li>
+      <li>Revoke Chute's access to your Google account at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</li>
+      <li>Deleting the app removes the captures and tokens stored on your device.</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this policy? Email <a href="mailto:hello@usechute.com">hello@usechute.com</a>.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+      We may update this policy as Chute evolves. Material changes will be reflected here with
+      a new "last updated" date.
+    </p>
+
+    <footer>
+      © 2026 Chute · <a href="/terms.html">Terms of Service</a> · <a href="mailto:hello@usechute.com">hello@usechute.com</a>
+    </footer>
+  </div>
+</body>
+</html>
