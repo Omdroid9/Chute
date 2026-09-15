@@ -1,0 +1,9 @@
+# whisper.cpp (ggml) uses std::filesystem, which is only available on macOS
+# 10.15+. Tauri's build otherwise pins the macOS deployment target to 10.13,
+# which makes the ggml C++ fail to compile ("'path' is unavailable: introduced
+# in macOS 10.15"). Force 11.0 for every cargo/cmake build — local `tauri dev`,
+# `tauri build`, and the GitHub Actions release alike. `force = true` overrides
+# whatever value the tauri CLI injects into the build environment.
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "11.0", force = true }
+CMAKE_OSX_DEPLOYMENT_TARGET = { value = "11.0", force = true }
