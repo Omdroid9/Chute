@@ -34,6 +34,16 @@ import {
 import { isMacOS } from "../lib/platform";
 import { noteContentFromSplit, splitCaptureLines } from "../lib/splitCapture";
 import { recurrenceLabelFromRule } from "../lib/recurrence";
+import {
+  getVoiceModelStatus,
+  startVoice,
+  stopVoice,
+  downloadVoiceModel,
+  subscribeVoice,
+  downloadPercent,
+  type VoiceState,
+  type VoiceModelState,
+} from "../lib/voice";
 import { useAppStore } from "../store/useAppStore";
 import TagChip from "./TagChip";
 import ListPicker from "./ListPicker";
@@ -282,6 +292,14 @@ const IconBookmark = ({ size = 14 }: IconProps) => (
   </svg>
 );
 
+const IconMic = ({ size = 16 }: IconProps) => (
+  <svg {...svgProps(size)} strokeWidth={2}>
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+    <path d="M12 19v4M8 23h8" />
+  </svg>
+);
+
 export default function CaptureWindow() {
   const { update, restartToUpdate } = useAutoUpdater();
   const [text, setText] = useState("");
@@ -335,6 +353,9 @@ export default function CaptureWindow() {
   const [recentIndex, setRecentIndex] = useState<number | null>(null);
   const [manualReminderTime, setManualReminderTime] = useState<string | null>(null);
   const [pulse, setPulse] = useState(0);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceModel, setVoiceModel] = useState<VoiceModelState>("ready");
+  const [voiceDownloadPct, setVoiceDownloadPct] = useState(0);
   const [showProductTour, setShowProductTour] = useState(false);
   const [destinationPrompt, setDestinationPrompt] = useState<{
     keepOpen: boolean;
@@ -344,6 +365,64 @@ export default function CaptureWindow() {
     ReturnType<typeof loadIntegrationSettings>
   > | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Voice capture: subscribe to backend events. Transcripts (from either the
+  // push-to-talk hotkey or the mic button) flow into the box like typed text.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void getVoiceModelStatus().then(setVoiceModel);
+    void subscribeVoice({
+      onState: setVoiceState,
+      onTranscript: (transcript) => {
+        const clean = transcript.trim();
+        if (!clean) {
+          return;
+        }
+        setText((prev) => {
+          const joiner = prev && !/\s$/.test(prev) ? " " : "";
+          return `${prev}${joiner}${clean}`.slice(0, MAX_CHARS);
+        });
+        requestAnimationFrame(() => inputRef.current?.focus());
+      },
+      onError: (message) => {
+        if (/install/i.test(message)) {
+          setVoiceModel("needs-model");
+        }
+        setSaveError(message);
+        setVoiceState("idle");
+      },
+      onModelProgress: (downloaded, total) =>
+        setVoiceDownloadPct(downloadPercent(downloaded, total)),
+      onModelDone: () => {
+        setVoiceModel("ready");
+        setVoiceDownloadPct(0);
+      },
+      onModelError: (message) => {
+        setVoiceModel("needs-model");
+        setSaveError(message);
+      },
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  function onMicClick() {
+    if (voiceModel === "needs-model") {
+      setVoiceModel("downloading");
+      setVoiceDownloadPct(0);
+      void downloadVoiceModel();
+      return;
+    }
+    if (voiceModel !== "ready") {
+      return;
+    }
+    if (voiceState === "recording") {
+      void stopVoice();
+    } else if (voiceState === "idle") {
+      void startVoice();
+    }
+  }
   const hydratedRef = useRef(false);
 
   const { selectedTag, setSelectedTag, setCapturesToday, lastSyncLabel, theme, setTheme } =
@@ -1819,7 +1898,15 @@ export default function CaptureWindow() {
               </div>
 
               <div className="flex items-center gap-2.5">
-                {remaining < CHAR_COUNTER_THRESHOLD ? (
+                {voiceState === "recording" ? (
+                  <span className="text-[11px] text-red-500">Listening…</span>
+                ) : voiceState === "transcribing" ? (
+                  <span className="text-[11px] text-[var(--muted)]">Transcribing…</span>
+                ) : voiceModel === "downloading" ? (
+                  <span className="tabular-nums text-[11px] text-[var(--muted)]">
+                    Setting up voice… {voiceDownloadPct}%
+                  </span>
+                ) : remaining < CHAR_COUNTER_THRESHOLD ? (
                   <span
                     className={[
                       "tabular-nums text-[11px]",
@@ -1829,6 +1916,27 @@ export default function CaptureWindow() {
                     {remaining}
                   </span>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={onMicClick}
+                  disabled={voiceState === "transcribing" || voiceModel === "downloading"}
+                  className={[
+                    "icon-btn",
+                    voiceState === "recording" ? "text-red-500 animate-pulse" : "",
+                  ].join(" ")}
+                  title={
+                    voiceModel === "needs-model"
+                      ? "Set up voice (one-time ~140 MB download)"
+                      : voiceModel === "downloading"
+                        ? "Downloading voice model…"
+                        : voiceState === "recording"
+                          ? "Stop and transcribe"
+                          : "Voice capture (or hold ⌘⇧V)"
+                  }
+                  aria-label="Voice capture"
+                >
+                  <IconMic />
+                </button>
                 <button
                   type="button"
                   onClick={() => void persistCapture(false)}

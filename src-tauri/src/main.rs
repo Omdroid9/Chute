@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod voice;
 mod window;
 
 use std::sync::Mutex;
@@ -31,6 +32,10 @@ pub struct AppState {
   pub capture_raise_guard: Mutex<Option<std::time::Instant>>,
   /// Active Chute-native countdown timers, keyed by id.
   pub timers: Mutex<std::collections::HashMap<String, commands::TimerEntry>>,
+  /// Push-to-talk voice hotkey (hold to record, release to transcribe).
+  pub ptt_hotkey: Mutex<String>,
+  /// On-device voice capture + transcription state.
+  pub voice: voice::VoiceState,
 }
 
 pub fn default_hotkey() -> &'static str {
@@ -46,6 +51,14 @@ pub fn default_library_hotkey() -> &'static str {
     "CommandOrControl+Shift+L"
   } else {
     "Ctrl+Shift+L"
+  }
+}
+
+pub fn default_ptt_hotkey() -> &'static str {
+  if cfg!(target_os = "macos") {
+    "CommandOrControl+Shift+V"
+  } else {
+    "Ctrl+Shift+V"
   }
 }
 
@@ -112,6 +125,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn main() {
   let initial_hotkey = default_hotkey().to_string();
   let initial_library_hotkey = default_library_hotkey().to_string();
+  let initial_ptt_hotkey = default_ptt_hotkey().to_string();
 
   tauri::Builder::default()
     .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -123,10 +137,26 @@ fn main() {
       main_view: Mutex::new(MainView::Capture),
       capture_raise_guard: Mutex::new(None),
       timers: Mutex::new(std::collections::HashMap::new()),
+      ptt_hotkey: Mutex::new(initial_ptt_hotkey.clone()),
+      voice: voice::VoiceState::new(),
     })
     .plugin(
       tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, shortcut, event| {
+          // Push-to-talk needs both press (start recording) and release
+          // (stop + transcribe), so it's handled before the Pressed-only gate.
+          let ptt_hotkey = app
+            .try_state::<AppState>()
+            .and_then(|state| state.ptt_hotkey.lock().ok().map(|guard| guard.clone()))
+            .and_then(|s| s.parse::<Shortcut>().ok());
+          if ptt_hotkey.as_ref() == Some(shortcut) {
+            match event.state() {
+              ShortcutState::Pressed => voice::ptt_pressed(app),
+              ShortcutState::Released => voice::ptt_released(app),
+            }
+            return;
+          }
+
           if event.state() != ShortcutState::Pressed {
             return;
           }
@@ -220,6 +250,30 @@ fn main() {
           );
         }
       }
+
+      // Push-to-talk voice hotkey: hold to record, release to transcribe.
+      // Best-effort like the library hotkey — the in-bar mic button still works.
+      match initial_ptt_hotkey.parse::<Shortcut>() {
+        Ok(ptt_shortcut) => {
+          if let Err(error) = app.global_shortcut().register(ptt_shortcut) {
+            eprintln!(
+              "Push-to-talk hotkey '{}' could not be registered: {} (mic button still works)",
+              initial_ptt_hotkey, error
+            );
+            if let Some(state) = app.try_state::<AppState>() {
+              if let Ok(mut current) = state.ptt_hotkey.lock() {
+                current.clear();
+              }
+            }
+          }
+        }
+        Err(error) => {
+          eprintln!(
+            "Push-to-talk hotkey '{}' could not be parsed: {}",
+            initial_ptt_hotkey, error
+          );
+        }
+      }
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -242,7 +296,11 @@ fn main() {
       commands::create_apple_calendar_event,
       commands::start_chute_timer,
       commands::cancel_chute_timer,
-      commands::list_chute_timers
+      commands::list_chute_timers,
+      voice::voice_start,
+      voice::voice_stop,
+      voice::voice_model_status,
+      voice::voice_download_model
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Klyph saves your captures into the Apple Notes app on this Mac.</string>
+	<string>Chute saves your captures into Apple Reminders, Notes, and Calendar on this Mac.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Chute uses the microphone only while you hold the voice key, to turn what you say into a capture. Audio is transcribed on your Mac and never leaves your device.</string>
 </dict>
 </plist>
