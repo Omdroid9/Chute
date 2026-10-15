@@ -64,7 +64,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -343,18 +343,6 @@
       <!-- The summon moment: the keyboard presses ⌘ ⇧ Space, the bar drops -->
       <section class="section-summon" id="summon" aria-labelledby="summon-title" data-summon-band>
         <div class="summon-band-inner">
-          <div class="summon-band-stage" aria-hidden="true">
-            <div class="lkb" data-summon-keyboard></div>
-            <div class="summon-band-bar">
-              <img src="/chute-sphere.svg" alt="" width="15" height="15" />
-              <span class="summon-band-text">remind me to stretch at 6</span>
-              <span class="summon-band-chip">Reminders</span>
-            </div>
-            <p class="summon-band-reason">
-              <span class="summon-band-dot"></span>
-              Sounds like a reminder → <strong>Reminders</strong>
-            </p>
-          </div>
           <div class="summon-band-copy">
             <p class="eyebrow">The reflex</p>
             <h2 id="summon-title">One key.<br />Over <span class="accent-serif">anything.</span></h2>
@@ -366,6 +354,18 @@
             <button type="button" class="btn btn-ghost summon-band-cta" data-summon-open>
               <span>Try it on this page: press <kbd class="inline-kbd">⌘</kbd><kbd class="inline-kbd">⇧</kbd><kbd class="inline-kbd">Space</kbd></span>
             </button>
+          </div>
+          <div class="summon-band-stage" aria-hidden="true">
+            <div class="lkb" data-summon-keyboard></div>
+            <div class="summon-band-bar">
+              <img src="/chute-sphere.svg" alt="" width="15" height="15" />
+              <span class="summon-band-text">remind me to stretch at 6</span>
+              <span class="summon-band-chip">Reminders</span>
+            </div>
+            <p class="summon-band-reason">
+              <span class="summon-band-dot"></span>
+              Sounds like a reminder → <strong>Reminders</strong>
+            </p>
           </div>
         </div>
       </section>
@@ -381,6 +381,8 @@
             landed where it did, and you can correct it once.
           </p>
         </div>
+
+        <div class="flipboard" data-flipboard data-reveal aria-hidden="true"></div>
 
         <div class="release-strip" data-reveal data-reveal-delay="1" aria-label="New in this release">
           <article class="release-card">
@@ -577,18 +579,32 @@
             </ul>
           </div>
 
-          <div class="privacy-art" data-reveal data-reveal-delay="1" aria-hidden="true">
-            <div class="privacy-orbit privacy-orbit-1"></div>
-            <div class="privacy-orbit privacy-orbit-2"></div>
-            <div class="privacy-orbit privacy-orbit-3"></div>
-            <div class="privacy-satellite privacy-satellite-1"><span class="brand-logo" data-logo="slack"></span></div>
-            <div class="privacy-satellite privacy-satellite-2"><span class="brand-logo" data-logo="notion"></span></div>
-            <div class="privacy-satellite privacy-satellite-3"><span class="brand-logo" data-logo="gcal"></span></div>
-            <div class="privacy-satellite privacy-satellite-4"><span class="brand-logo" data-logo="discord"></span></div>
-            <div class="privacy-center">
-              <span class="brand-logo" data-logo="local"></span>
-              <span class="privacy-center-label">On device</span>
+          <!-- Your Mac is a closed room: captures land and stay; one leaves only when you send it -->
+          <div class="vault" data-vault data-reveal data-reveal-delay="1" aria-hidden="true">
+            <div class="vault-mac">
+              <div class="vault-bar">
+                <span class="vault-lights"><i></i><i></i><i></i></span>
+                <span class="vault-title">Your Mac</span>
+                <svg class="vault-lock" viewBox="0 0 24 24" width="14" height="14"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </div>
+              <div class="vault-body">
+                <p class="vault-caption"><span>Captured here</span><span data-vault-count>124 on this Mac</span></p>
+                <ul class="vault-list" data-vault-list></ul>
+                <p class="vault-foot">
+                  <svg viewBox="0 0 24 24" width="12" height="12"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                  Nothing leaves unless you send it
+                </p>
+              </div>
             </div>
+            <span class="vault-door"></span>
+            <svg class="vault-links" data-vault-links preserveAspectRatio="none"></svg>
+            <div class="vault-cloud">
+              <div class="vault-app is-on" data-app="slack"><span class="brand-logo" data-logo="slack"></span><b>Slack</b><small>Connected</small></div>
+              <div class="vault-app is-on" data-app="notion"><span class="brand-logo" data-logo="notion"></span><b>Notion</b><small>Connected</small></div>
+              <div class="vault-app" data-app="gcal"><span class="brand-logo" data-logo="gcal"></span><b>Calendar</b><small>Not set up</small></div>
+              <div class="vault-app" data-app="discord"><span class="brand-logo" data-logo="discord"></span><b>Discord</b><small>Not set up</small></div>
+            </div>
+          </div>
           </div>
         </div>
       </section>

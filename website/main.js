@@ -503,70 +503,151 @@ if (smartBtnExisting) {
   };
 }
 
-/* ---------- Floating capture bubbles in the privacy orbit ---------- */
-const privacyArt = document.querySelector(".privacy-art");
-if (privacyArt && !prefersReduced) {
-  const CAPTURES = [
-    "Standup at 9am",
-    "Email Sarah Friday",
-    "Book Q3 review",
-    "Idea: hotkey swap",
-    "Call mom 5pm",
-    "Ship beta build",
-    "Read research doc",
+/* ---------- Privacy: "the boundary" ---------- */
+// Captures land in "Your Mac" and stay there. Only a capture routed to a connected app
+// leaves: one packet, through the panel's one door, to that one app. The other apps
+// aren't connected, so they get no line and nothing ever goes to them.
+const vault = document.querySelector("[data-vault]");
+if (vault) {
+  const list = vault.querySelector("[data-vault-list]");
+  const counter = vault.querySelector("[data-vault-count]");
+  const mac = vault.querySelector(".vault-mac");
+  const door = vault.querySelector(".vault-door");
+  const links = vault.querySelector("[data-vault-links]");
+  const apps = new Map([...vault.querySelectorAll("[data-app]")].map((el) => [el.dataset.app, el]));
+  const FEED = [
+    { text: "call mom tomorrow at 5pm", to: "Reminders", logo: "reminders" },
+    { text: "rough day. write more tomorrow", to: "Saved locally", logo: "local" },
+    { text: "standup recap for the team", to: "Slack", logo: "slack", send: "slack" },
+    { text: "pricing idea: charge per seat?", to: "Notes", logo: "notes" },
+    { text: "renew passport before March", to: "Reminders", logo: "reminders" },
+    { text: "Q4 planning outline", to: "Notion", logo: "notion", send: "notion" },
+    { text: "three things that went well", to: "Saved locally", logo: "local" },
   ];
-  let cycle = 0;
-  let cycleTimer = null;
+  const MAX_ROWS = 4;
+  const EVERY = 2800;
+  const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+  let next = 0;
+  let stored = 124;
+  let timer = null;
 
-  const launchBubble = () => {
-    const satellites = privacyArt.querySelectorAll(".privacy-satellite");
-    const center = privacyArt.querySelector(".privacy-center");
-    if (!satellites.length || !center) return;
-    const sat = satellites[cycle % satellites.length];
-
-    const artRect = privacyArt.getBoundingClientRect();
-    const satRect = sat.getBoundingClientRect();
-    const centerRect = center.getBoundingClientRect();
-
-    const bubble = document.createElement("div");
-    bubble.className = "privacy-bubble";
-    bubble.textContent = CAPTURES[cycle % CAPTURES.length];
-
-    const startX = satRect.left - artRect.left + satRect.width / 2;
-    const startY = satRect.top - artRect.top + satRect.height / 2;
-    const endX = centerRect.left - artRect.left + centerRect.width / 2;
-    const endY = centerRect.top - artRect.top + centerRect.height / 2;
-
-    bubble.style.left = `${startX}px`;
-    bubble.style.top = `${startY}px`;
-    privacyArt.appendChild(bubble);
-
-    requestAnimationFrame(() => {
-      bubble.classList.add("is-flying");
-      bubble.style.left = `${endX}px`;
-      bubble.style.top = `${endY}px`;
-    });
-
-    setTimeout(() => bubble.remove(), 1700);
-    cycle++;
+  const makeRow = (item, sent) => {
+    const li = document.createElement("li");
+    li.className = "vault-row";
+    li.innerHTML =
+      '<span class="vault-row-text"></span>' +
+      `<span class="vault-tag${sent ? " is-sent" : ""}"><span class="brand-logo" data-logo="${item.logo}"></span><span class="vault-tag-label"></span></span>`;
+    li.querySelector(".vault-row-text").textContent = item.text;
+    li.querySelector(".vault-tag-label").textContent = item.send
+      ? `${sent ? "Sent to" : "To"} ${item.to}`
+      : item.to;
+    injectLogos(li);
+    return li;
   };
 
-  const obs = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          if (cycleTimer) clearInterval(cycleTimer);
-          launchBubble();
-          cycleTimer = setInterval(launchBubble, 1600);
-        } else if (cycleTimer) {
-          clearInterval(cycleTimer);
-          cycleTimer = null;
+  // Geometry, in the vault's own coordinates
+  const point = (el, fx, fy) => {
+    const v = vault.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { x: r.left - v.left + r.width * fx, y: r.top - v.top + r.height * fy };
+  };
+  const curve = (a, b) => {
+    const my = (a.y + b.y) / 2;
+    return `C ${a.x} ${my}, ${b.x} ${my}, ${b.x} ${b.y}`;
+  };
+  // Faint lines from the door to the connected apps only
+  const layout = () => {
+    door.style.top = `${mac.offsetHeight}px`;
+    const v = vault.getBoundingClientRect();
+    links.setAttribute("viewBox", `0 0 ${v.width} ${v.height}`);
+    links.replaceChildren();
+    const d = point(mac, 0.5, 1);
+    for (const [name, el] of apps) {
+      if (!el.classList.contains("is-on")) continue;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M ${d.x} ${d.y} ${curve(d, point(el, 0.5, 0))}`);
+      path.dataset.app = name;
+      links.append(path);
+    }
+  };
+
+  // The one way out: from the capture's tag, down to the door, along the line to the app
+  const send = (li, item) => {
+    const tile = apps.get(item.send);
+    const from = point(li.querySelector(".vault-tag"), 0.5, 0.5);
+    const d = point(mac, 0.5, 1);
+    const to = point(tile, 0.5, 0);
+    const packet = document.createElement("span");
+    packet.className = "vault-packet";
+    packet.style.offsetPath = `path("M ${from.x} ${from.y} L ${d.x} ${d.y} ${curve(d, to)}")`;
+    vault.append(packet);
+    const line = links.querySelector(`[data-app="${item.send}"]`);
+    line?.classList.add("is-live");
+    const flight = packet.animate(
+      [
+        { offsetDistance: "0%", opacity: 0 },
+        { offsetDistance: "6%", opacity: 1, offset: 0.06 },
+        { offsetDistance: "100%", opacity: 1 },
+      ],
+      { duration: 1100, easing: "cubic-bezier(0.45, 0, 0.2, 1)", fill: "forwards" },
+    );
+    flight.onfinish = () => {
+      packet.remove();
+      line?.classList.remove("is-live");
+      const tag = li.querySelector(".vault-tag");
+      tag.classList.add("is-sent");
+      tag.querySelector(".vault-tag-label").textContent = `Sent to ${item.to}`;
+      const status = tile.querySelector("small");
+      tile.classList.add("is-receiving");
+      status.textContent = "Sent by you";
+      setTimeout(() => {
+        tile.classList.remove("is-receiving");
+        status.textContent = "Connected";
+      }, 1400);
+    };
+  };
+
+  // A new capture lands at the top; the rest slide down (FLIP) and the oldest drops out of view
+  const land = () => {
+    const item = FEED[next % FEED.length];
+    next += 1;
+    const before = new Map([...list.children].map((el) => [el, el.getBoundingClientRect().top]));
+    const li = makeRow(item, false);
+    list.prepend(li);
+    li.animate([{ opacity: 0, transform: "translateY(-10px)" }, { opacity: 1, transform: "none" }],
+      { duration: 450, easing: EASE });
+    for (const [el, top] of before) {
+      const dy = top - el.getBoundingClientRect().top;
+      if (dy) el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 450, easing: EASE });
+    }
+    setTimeout(() => {
+      while (list.children.length > MAX_ROWS) list.lastElementChild.remove();
+    }, 500);
+    stored += 1;
+    counter.textContent = `${stored} on this Mac`;
+    if (item.send) setTimeout(() => li.isConnected && send(li, item), 650);
+  };
+
+  // Start with a few captures already there (newest first)
+  for (const item of FEED.slice(0, 3).reverse()) list.append(makeRow(item, Boolean(item.send)));
+  next = 3;
+  layout();
+  new ResizeObserver(layout).observe(vault);
+  document.fonts?.ready.then(layout);
+
+  if (!prefersReduced) {
+    new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !timer) {
+          timer = setInterval(land, EVERY);
+        } else if (!entry.isIntersecting && timer) {
+          clearInterval(timer);
+          timer = null;
         }
-      }
-    },
-    { threshold: 0.3 },
-  );
-  obs.observe(privacyArt);
+      },
+      { threshold: 0.3 },
+    ).observe(vault);
+  }
 }
 
 /* ---------- CTA email form ---------- */
@@ -1217,6 +1298,8 @@ if (summonBand && summonKeyboard) {
     ["ShiftLeft", 300],
     ["Space", 450],
   ];
+  // The hotkey stays outlined between presses so it's always findable on the board
+  for (const [code] of HOTKEY) keyEls.get(code)?.classList.add("is-hotkey");
   const RELEASE_AT = 820;
   const REPLAY_EVERY = 6500;
   let timers = [];
@@ -1260,6 +1343,230 @@ if (summonBand && summonKeyboard) {
     { threshold: [0, 0.45] },
   );
   bandObserver.observe(summonBand);
+}
+
+/* ---------- Routing board (vanilla port of Aceternity UI "Text Flipping Board") ---------- */
+// A split-flap departures board in "It decides where things go": each row flips in a capture
+// and where Chute sent it. Same flip mechanics, timings and colors as the original.
+const flipboard = document.querySelector("[data-flipboard]");
+if (flipboard) {
+  const FLAP_CHARS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$()-+&=;:'\"%,./?°";
+  // Brief color flashes while scrambling (Tailwind red/orange/yellow/green/blue/violet/white)
+  const ACCENTS = [
+    { top: "#e7000b", bottom: "#c10007", text: "#fff" },
+    { top: "#ff6900", bottom: "#f54900", text: "#fff" },
+    { top: "#fdc700", bottom: "#f0b100", text: "#171717" },
+    { top: "#00a63e", bottom: "#008236", text: "#fff" },
+    { top: "#155dfc", bottom: "#1447e6", text: "#fff" },
+    { top: "#7f22fe", bottom: "#7008e7", text: "#fff" },
+    { top: "#ffffff", bottom: "#f5f5f5", text: "#171717" },
+  ];
+  const FACE = "#171717";
+  const FALLING = "#262626";
+  const INK = "#fff";
+  const COL_DELAY = 30;
+  const ROW_DELAY = 20;
+  const STEP_MS = 55;
+  const FLIP_MS = 350;
+  const FALL_EASE = "cubic-bezier(0.55, 0.055, 0.675, 0.19)";
+  const RISE_EASE = "cubic-bezier(0.33, 1.55, 0.64, 1)";
+  const PAGE_EVERY = 7000;
+
+  // [what was typed, where it went]: every thought fits 14 columns, every pair fits 22
+  const CAPTURES = [
+    ["CALL MOM 5PM", "REMINDERS"],
+    ["Q3 REVIEW THU", "CALENDAR"],
+    ["DEPLOY FRI", "SLACK"],
+    ["PRICING IDEA", "NOTION"],
+    ["BOOK FLIGHTS", "TASKS"],
+    ["STRETCH AT 6", "REMINDERS"],
+    ["DENTIST TUE 9", "CALENDAR"],
+    ["STANDUP RECAP", "SLACK"],
+    ["READING LIST", "NOTES"],
+    ["RENEW PASSPORT", "TASKS"],
+    ["PAY RENT FRI", "REMINDERS"],
+    ["1:1 SAM 3PM", "CALENDAR"],
+    ["TELL #ENG FRI", "SLACK"],
+    ["GIFT IDEAS", "NOTION"],
+    ["RAID SAT 9PM", "DISCORD"],
+  ];
+  const chunk = (list, n) =>
+    Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+  // Wide: a header row, then five captures with the destination right-aligned
+  const WIDE = {
+    cols: 22,
+    rows: 6,
+    pages: chunk(CAPTURES, 5).map((page) => [
+      "CAPTURED" + " ".repeat(22 - 8 - 7) + "SENT TO",
+      ...page.map(([t, d]) => t + " ".repeat(22 - t.length - d.length) + d),
+    ]),
+  };
+  // Phones: three captures, the thought on one row and its destination under it
+  const NARROW = {
+    cols: 14,
+    rows: 6,
+    pages: chunk(CAPTURES, 3).map((page) => page.flatMap(([t, d]) => [t, d.padStart(14)])),
+  };
+
+  const grid = document.createElement("div");
+  grid.className = "fb-grid";
+  flipboard.append(grid);
+
+  const glyph = (ch) => (ch === " " ? " " : ch);
+  const paint = (half, ch, bg, ink) => {
+    half.style.background = bg;
+    half.firstChild.textContent = glyph(ch);
+    half.firstChild.style.color = ink;
+  };
+
+  const makeCell = () => {
+    const el = document.createElement("div");
+    el.className = "fb-cell";
+    el.innerHTML =
+      '<div class="fb-flap"><div class="fb-hinge"><i></i><i></i><i></i></div>' +
+      '<div class="fb-half fb-top"><span> </span></div>' +
+      '<div class="fb-half fb-bottom"><span> </span><i class="fb-shine"></i></div>' +
+      '<div class="fb-half fb-top fb-fall"><span> </span><i class="fb-shade"></i></div>' +
+      '<div class="fb-half fb-bottom fb-rise"><span> </span><i class="fb-shade"></i></div>' +
+      '<i class="fb-split"></i></div><div class="fb-stripes"></div>';
+    const [top, bottom, fall, rise] = el.querySelectorAll(".fb-half");
+    return {
+      el, top, bottom, fall, rise,
+      shine: bottom.querySelector(".fb-shine"),
+      fallShade: fall.querySelector(".fb-shade"),
+      riseShade: rise.querySelector(".fb-shade"),
+      cur: " ", acc: null, target: " ", plan: null, anims: [],
+    };
+  };
+
+  // One flip: the old top half falls away, the new bottom half swings up behind it
+  const flip = (c, ch, acc) => {
+    const prev = c.cur;
+    const prevAcc = c.acc;
+    c.cur = ch;
+    c.acc = acc;
+    paint(c.top, ch, acc?.top ?? FACE, acc?.text ?? INK);
+    paint(c.bottom, ch, acc?.bottom ?? FACE, acc?.text ?? INK);
+    paint(c.fall, prev, prevAcc?.top ?? FALLING, prevAcc?.text ?? INK);
+    paint(c.rise, ch, acc?.bottom ?? FACE, acc?.text ?? INK);
+    c.el.classList.add("is-live");
+    for (const a of c.anims) a.cancel();
+    const rise = { duration: FLIP_MS * 0.85, delay: FLIP_MS * 0.5, fill: "both" };
+    c.anims = [
+      c.fall.animate([{ transform: "rotateX(0deg)" }, { transform: "rotateX(-100deg)" }],
+        { duration: FLIP_MS, easing: FALL_EASE, fill: "forwards" }),
+      c.fallShade.animate([{ opacity: 0 }, { opacity: 0.6 }], { duration: FLIP_MS, fill: "forwards" }),
+      c.rise.animate([{ transform: "rotateX(90deg)" }, { transform: "rotateX(0deg)" }],
+        { ...rise, easing: RISE_EASE }),
+      c.riseShade.animate([{ opacity: 0.4 }, { opacity: 0 }], rise),
+      c.shine.animate([{ opacity: 0.5 }, { opacity: 0 }],
+        { duration: FLIP_MS * 1.3, easing: "ease-out", fill: "forwards" }),
+    ];
+  };
+
+  // Every scrambling cell is advanced from one animation-frame loop
+  const busy = new Set();
+  let raf = null;
+  const tick = (now) => {
+    raf = null;
+    for (const c of busy) {
+      const p = c.plan;
+      if (now < p.nextAt) continue;
+      p.i += 1;
+      const last = p.i === p.count;
+      const ch = last ? p.target : FLAP_CHARS[1 + Math.floor(Math.random() * (FLAP_CHARS.length - 1))];
+      const acc = !last && Math.random() < 0.2
+        ? ACCENTS[Math.floor(Math.random() * ACCENTS.length)]
+        : null;
+      flip(c, ch, acc);
+      if (last) {
+        c.plan = null;
+        busy.delete(c);
+      } else {
+        p.nextAt += STEP_MS;
+      }
+    }
+    if (busy.size) raf = requestAnimationFrame(tick);
+  };
+
+  let layout = null;
+  let cells = [];
+  let page = 0;
+  const showPage = (rows) => {
+    const t0 = performance.now();
+    cells.forEach((c, idx) => {
+      const r = Math.floor(idx / layout.cols);
+      const col = idx % layout.cols;
+      const raw = (rows[r] ?? "")[col] ?? " ";
+      const target = FLAP_CHARS.includes(raw.toUpperCase()) ? raw.toUpperCase() : " ";
+      if (target === c.target) return;
+      c.target = target;
+      if (prefersReduced) {
+        c.cur = target;
+        paint(c.top, target, FACE, INK);
+        paint(c.bottom, target, FACE, INK);
+        return;
+      }
+      if (target === " " && c.cur === " ") {
+        c.plan = null;
+        busy.delete(c);
+        return;
+      }
+      const count = target === " "
+        ? 8 + Math.floor(Math.random() * 8)
+        : 25 + Math.floor(Math.random() * 15);
+      c.plan = { i: 0, count, target, nextAt: t0 + col * COL_DELAY + r * ROW_DELAY };
+      busy.add(c);
+    });
+    if (busy.size && !raf) raf = requestAnimationFrame(tick);
+  };
+
+  const narrow = window.matchMedia("(max-width: 640px)");
+  let onScreen = false;
+  let cycle = null;
+  const startCycle = () => {
+    if (cycle || prefersReduced) return;
+    cycle = setInterval(() => {
+      page = (page + 1) % layout.pages.length;
+      showPage(layout.pages[page]);
+    }, PAGE_EVERY);
+  };
+  const stopCycle = () => {
+    clearInterval(cycle);
+    cycle = null;
+  };
+
+  const build = () => {
+    for (const c of cells) for (const a of c.anims) a.cancel();
+    busy.clear();
+    layout = narrow.matches ? NARROW : WIDE;
+    flipboard.style.setProperty("--cols", layout.cols);
+    cells = Array.from({ length: layout.cols * layout.rows }, makeCell);
+    grid.replaceChildren(...cells.map((c) => c.el));
+    page = 0;
+    if (onScreen || prefersReduced) showPage(layout.pages[0]);
+  };
+
+  build();
+  narrow.addEventListener("change", () => {
+    stopCycle();
+    build();
+    if (onScreen) startCycle();
+  });
+  new IntersectionObserver(
+    ([entry]) => {
+      const wasOnScreen = onScreen;
+      onScreen = entry.isIntersecting;
+      if (onScreen && !wasOnScreen) {
+        // first sight flips the board in from blank; later visits just resume the cycle
+        if (cells.every((c) => c.target === " ")) showPage(layout.pages[page]);
+        startCycle();
+      } else if (!onScreen) {
+        stopCycle();
+      }
+    },
+    { threshold: 0.35 },
+  ).observe(flipboard);
 }
 
 /* ---------- MacBook scroll (vanilla port of Aceternity UI "MacBook Scroll") ---------- */

@@ -322,13 +322,24 @@ h3 {
   letter-spacing: -0.025em;
 }
 
-.section-copy p,
-.section-intro p,
+.section-copy p:where(:not(.eyebrow)),
+.section-intro p:where(:not(.eyebrow)),
 .hero-lead {
   color: var(--muted);
   font-size: clamp(1rem, 1.7vw, 1.1rem);
   line-height: 1.6;
   max-width: 34rem;
+  letter-spacing: -1px;
+}
+
+/* The rest of the site's body paragraphs (15–16px) share the same tight tracking */
+.how-body p,
+.summon-band-copy p:where(:not(.eyebrow)),
+.release-p,
+.detail-card p,
+.changelog-body p,
+.cta-inner p:where(:not(.cta-fine, .eyebrow)),
+.footer-tagline {
   letter-spacing: -1px;
 }
 
@@ -2085,105 +2096,6 @@ h3 {
   font-weight: 700;
 }
 
-.privacy-art {
-  position: relative;
-  height: 380px;
-  max-width: 380px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.privacy-orbit {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  border-radius: 50%;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-.privacy-orbit-1 { width: 160px; height: 160px; }
-.privacy-orbit-2 { width: 260px; height: 260px; animation: orbit-spin 30s linear infinite; }
-.privacy-orbit-3 { width: 360px; height: 360px; }
-
-@keyframes orbit-spin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
-}
-
-.privacy-center {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 1.1rem 1.25rem 1rem;
-  border-radius: 1rem;
-  background: linear-gradient(180deg, rgba(107, 157, 232, 0.14), rgba(107, 157, 232, 0.02));
-  border: 1px solid rgba(107, 157, 232, 0.35);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 40px rgba(107, 157, 232, 0.18);
-  z-index: 2;
-}
-.privacy-center .brand-logo {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-}
-.privacy-center-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.78);
-  text-transform: uppercase;
-}
-
-.privacy-satellite {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 44px;
-  height: 44px;
-  margin: -22px 0 0 -22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: rgba(20, 20, 22, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
-  z-index: 1;
-}
-.privacy-satellite .brand-logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-}
-
-.privacy-satellite-1 { transform: translate(-130px, -10px); animation: sat-float 6s ease-in-out infinite; }
-.privacy-satellite-2 { transform: translate(120px, -40px); animation: sat-float 7s ease-in-out infinite 0.8s; }
-.privacy-satellite-3 { transform: translate(140px, 70px);  animation: sat-float 8s ease-in-out infinite 1.6s; }
-.privacy-satellite-4 { transform: translate(-110px, 90px); animation: sat-float 6.5s ease-in-out infinite 2.2s; }
-
-@keyframes sat-float {
-  0%, 100% { translate: 0 0; }
-  50%      { translate: 0 -6px; }
-}
-
-@media (max-width: 720px) {
-  .privacy-art {
-    height: 300px;
-  }
-  .privacy-orbit-3 { width: 280px; height: 280px; }
-  .privacy-orbit-2 { width: 200px; height: 200px; }
-  .privacy-orbit-1 { width: 120px; height: 120px; }
-  .privacy-satellite-1 { transform: translate(-100px, -10px); }
-  .privacy-satellite-2 { transform: translate(95px, -30px); }
-  .privacy-satellite-3 { transform: translate(110px, 50px); }
-  .privacy-satellite-4 { transform: translate(-90px, 70px); }
-}
-
 /* =========================================================
    FANCY PASS — curtain, spotlight, blobs, ripples, sheen,
    scroll-spy, heading reveals, flying chips, capture bubbles
@@ -2410,41 +2322,6 @@ h3 {
 }
 .fly-chip.is-flying {
   transform: translate(-50%, -50%) scale(0.35);
-  opacity: 0;
-}
-
-/* Floating capture bubbles in privacy section */
-.privacy-bubble {
-  position: absolute;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: rgba(20, 20, 22, 0.9);
-  border: 1px solid rgba(107, 157, 232, 0.35);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.7rem;
-  font-weight: 500;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 3;
-  transform: translate(-50%, -50%) scale(0.6);
-  opacity: 0;
-  animation: bubble-pop 0.35s var(--ease) forwards;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5),
-    0 0 16px rgba(107, 157, 232, 0.25);
-  transition:
-    left 1.5s cubic-bezier(0.5, 0, 0.1, 1),
-    top 1.5s cubic-bezier(0.5, 0, 0.1, 1),
-    opacity 1.5s ease-out,
-    transform 1.5s var(--ease);
-}
-@keyframes bubble-pop {
-  to {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 1;
-  }
-}
-.privacy-bubble.is-flying {
-  transform: translate(-50%, -50%) scale(0.4);
   opacity: 0;
 }
 
@@ -3214,8 +3091,6 @@ h3 {
   .mock-history-search-caret,
   .mock-mini-capture,
   .mock-mini-caret,
-  .privacy-orbit-2,
-  .privacy-satellite,
   .mock-capture-smart .time-mark,
   .hero-toast,
   .bg-blob,
@@ -3224,7 +3099,6 @@ h3 {
   .char-word,
   .ripple,
   .fly-chip,
-  .privacy-bubble,
   .page-curtain-orb {
     animation: none !important;
     transition: none !important;
@@ -4894,11 +4768,11 @@ main h2 .accent-serif {
 .section-summon::before {
   content: "";
   position: absolute;
-  left: 8%;
-  top: 50%;
-  width: min(34rem, 92%);
-  height: 24rem;
-  transform: translateY(-50%);
+  left: 50%;
+  top: 62%;
+  width: min(54rem, 100%);
+  height: 26rem;
+  transform: translate(-50%, -50%);
   background: radial-gradient(closest-side, rgba(122, 169, 238, 0.10), transparent 75%);
   pointer-events: none;
 }
@@ -4907,21 +4781,23 @@ main h2 .accent-serif {
   max-width: var(--max);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 3rem;
-  align-items: center;
+  justify-items: center;
+  text-align: center;
 }
 
-@media (min-width: 900px) {
-  .summon-band-inner {
-    grid-template-columns: 1.1fr 1fr;
-  }
+.summon-band-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
 /* Stage: the keyboard presses ⌘ ⇧ Space, then the bar drops.
    Keyboard = vanilla port of Aceternity UI "Keyboard" (ui.aceternity.com/components/keyboard):
-   same rows, key sizes, legends, colors and shadows. Pressed keys also get an accent tint so
-   the shortcut reads at a glance (the original only shrinks them to 98%). */
+   same rows, key sizes, legends, colors and shadows. ⌘ ⇧ Space stay outlined in the accent at
+   rest, and pressed keys get an accent tint (the original only shrinks them to 98%). */
 .lkb {
   width: fit-content;
   margin: 0 auto 2rem;
@@ -4930,11 +4806,10 @@ main h2 .accent-serif {
   line-height: 1.5;
 }
 @media (min-width: 400px) { .lkb { zoom: 0.8; } }
-@media (min-width: 480px) { .lkb { zoom: 1.05; } }
-@media (min-width: 640px) { .lkb { zoom: 1.4; } }
-@media (min-width: 900px) { .lkb { zoom: 1; margin-left: 0; } }
-@media (min-width: 1024px) { .lkb { zoom: 1.2; } }
-@media (min-width: 1136px) { .lkb { zoom: 1.35; } }
+@media (min-width: 640px) { .lkb { zoom: 1.25; } }
+@media (min-width: 768px) { .lkb { zoom: 1.5; } }
+@media (min-width: 1024px) { .lkb { zoom: 1.75; } }
+@media (min-width: 1280px) { .lkb { zoom: 2; } }
 
 .lkb-pad {
   height: 100%;
@@ -4985,6 +4860,15 @@ main h2 .accent-serif {
 .lkb-key:active,
 .lkb-key.is-pressed {
   transform: scale(0.98);
+}
+.lkb-key.is-hotkey {
+  color: #2f62c4;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 1px 0 rgba(0, 0, 0, 0.1),
+    0 1px 0 0 #fff inset,
+    0 0 0 1px rgba(122, 169, 238, 0.7),
+    0 0 8px rgba(122, 169, 238, 0.35);
 }
 .lkb-key.is-pressed {
   background: #d9e5f8;
@@ -5051,7 +4935,9 @@ main h2 .accent-serif {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  width: 100%;
   max-width: 26rem;
+  text-align: left;
   padding: 0.85rem 1rem;
   border-radius: 14px;
   background: linear-gradient(180deg, #1b1b22, #131318);
@@ -5080,6 +4966,15 @@ main h2 .accent-serif {
   overflow: hidden;
 }
 
+/* Narrow phones: let the thought wrap rather than clip */
+@media (max-width: 420px) {
+  .summon-band-text {
+    font-size: 0.85rem;
+    line-height: 1.3;
+    white-space: normal;
+  }
+}
+
 .summon-band-chip {
   flex: none;
   font-size: 0.72rem;
@@ -5092,6 +4987,7 @@ main h2 .accent-serif {
 
 .summon-band-reason {
   display: flex;
+  justify-content: center;
   align-items: baseline;
   gap: 0.5rem;
   margin: 0.8rem 0 0;
@@ -5119,17 +5015,22 @@ main h2 .accent-serif {
   transform: translateY(-1px);
 }
 
-/* Copy column */
+/* Copy, centred above the keyboard */
+.summon-band-copy .eyebrow {
+  justify-content: center;
+}
+
 .summon-band-copy h2 {
-  font-size: var(--t-3xl);
-  line-height: 1.04;
   margin: 0.75rem 0 1rem;
+  text-wrap: balance;
 }
 
 .summon-band-copy p {
   color: var(--muted);
   line-height: 1.65;
-  max-width: 30rem;
+  max-width: 34rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .summon-band-cta {
@@ -5620,4 +5521,342 @@ main h2 .accent-serif {
    clip (not hidden) so position: sticky inside main keeps working. */
 main {
   overflow-x: clip;
+}
+
+/* ===== Routing board =====
+   Vanilla port of Aceternity UI "Text Flipping Board" (ui.aceternity.com/components/
+   text-flipping-board), dark-theme values. main.js builds the cells and runs the flips. */
+.flipboard {
+  --cols: 22;
+  --gap: 3px;
+  position: relative;
+  width: 100%;
+  max-width: 48rem;
+  margin: 3rem auto 0;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #171717; /* neutral-900 */
+  box-shadow: 0 20px 70px -15px rgba(0, 0, 0, 0.6);
+  container-type: inline-size;
+}
+.fb-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  gap: var(--gap);
+}
+.fb-cell {
+  display: flex;
+  aspect-ratio: 3 / 6;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 3px;
+  border: 2px solid #000;
+}
+.fb-flap {
+  position: relative;
+  flex: 1;
+  perspective: 100px;
+  transform-style: preserve-3d;
+}
+/* the hinge: a hairline across the middle with a nub at each end */
+.fb-hinge {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fb-hinge i { background: #000; }
+.fb-hinge i:nth-child(1) { height: 50%; width: 1px; border-radius: 0 4px 4px 0; }
+.fb-hinge i:nth-child(2) { height: 1px; flex: 1; }
+.fb-hinge i:nth-child(3) { height: 50%; width: 1px; border-radius: 4px 0 0 4px; }
+.fb-half {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(50% - 0.5px);
+  overflow: hidden;
+  background: #171717;
+}
+.fb-top { top: 0; border-radius: 3px 3px 0 0; }
+.fb-bottom { bottom: 0; border-radius: 0 0 3px 3px; }
+/* each half shows its slice of a full-height glyph */
+.fb-half > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 200%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  color: #fff;
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1;
+  font-size: min(22px, calc((100cqi - (var(--cols) - 1) * var(--gap)) / var(--cols) * 0.85));
+}
+.fb-top > span { top: 0; }
+.fb-bottom > span { bottom: 0; }
+/* old top half falls away; new bottom half swings up after it */
+.fb-fall,
+.fb-rise {
+  z-index: 10;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+.fb-fall { transform-origin: bottom; background: #262626; }
+.fb-rise { transform-origin: top; transform: rotateX(90deg); }
+.fb-cell:not(.is-live) .fb-fall,
+.fb-cell:not(.is-live) .fb-rise {
+  display: none;
+}
+.fb-shine,
+.fb-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+.fb-shine { background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent 60%); }
+.fb-fall .fb-shade { background: linear-gradient(to bottom, rgba(0, 0, 0, 0), #000); }
+.fb-rise .fb-shade { background: linear-gradient(to top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6)); }
+.fb-split {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  z-index: 20;
+  height: 1px;
+  transform: translateY(-0.5px);
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+/* the flap's slatted foot */
+.fb-stripes {
+  height: 1rem;
+  width: 100%;
+  color: #000;
+  background-image: repeating-linear-gradient(to bottom, currentColor 0, currentColor 1px, transparent 1px, transparent 0.2rem);
+  -webkit-mask-image: linear-gradient(to top, #000 50%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 50%, transparent 100%);
+}
+@media (max-width: 767px) {
+  .flipboard { --gap: 1px; padding: 0.5rem; border-radius: 0.75rem; }
+  .fb-cell { border-width: 1px; border-radius: 2px; }
+  .fb-hinge { display: none; }
+  .fb-stripes {
+    height: 0.5rem;
+    background-image: repeating-linear-gradient(to bottom, currentColor 0, currentColor 1px, transparent 1px, transparent 0.15rem);
+  }
+}
+
+/* ===== Privacy: "the boundary" =====
+   Your Mac is a closed panel. Captures land in it and stay; a capture leaves only when it's
+   routed to a connected app: one packet, through the one door, to that one app. Driven by
+   main.js (rows, links, packet). */
+.vault {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+}
+.vault-mac {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 30px 80px -30px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.vault-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+.vault-lights { display: flex; gap: 6px; }
+.vault-lights i { width: 9px; height: 9px; border-radius: 50%; background: #34353c; }
+.vault-title {
+  margin: 0 auto;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+.vault-lock { color: var(--accent); }
+.vault-body { padding: 14px 14px 13px; }
+.vault-caption {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(245, 245, 248, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+.vault-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: calc(4 * 44px + 3 * 6px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vault-row {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vault-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.84rem;
+  color: var(--text-strong);
+}
+.vault-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 5px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
+}
+.vault-tag .brand-logo { width: 15px; height: 15px; border-radius: 4px; }
+.vault-tag.is-sent {
+  color: #cfe0ff;
+  background: rgba(122, 169, 238, 0.12);
+  border-color: rgba(122, 169, 238, 0.45);
+}
+.vault-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.vault-foot svg { color: var(--accent); flex: none; }
+/* the panel's one opening, on its bottom edge */
+.vault-door {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  width: 56px;
+  height: 3px;
+  margin-top: -2px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(122, 169, 238, 0.7);
+}
+.vault-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.vault-links path {
+  fill: none;
+  stroke: rgba(122, 169, 238, 0.3);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 5;
+  transition: stroke 0.3s ease;
+}
+.vault-links path.is-live {
+  stroke: var(--accent);
+  stroke-dasharray: none;
+}
+.vault-cloud {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 60px;
+}
+.vault-app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 4px 10px;
+  border-radius: 14px;
+  text-align: center;
+  background: rgba(20, 20, 22, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0.45;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+}
+.vault-app.is-on { opacity: 1; }
+.vault-app .brand-logo { width: 26px; height: 26px; border-radius: 7px; }
+.vault-app b { font-size: 0.74rem; font-weight: 500; color: var(--text-strong); }
+.vault-app small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.vault-app small::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4a4b52;
+}
+.vault-app.is-on small::before { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.6); }
+.vault-app.is-receiving {
+  border-color: rgba(122, 169, 238, 0.75);
+  box-shadow: 0 0 0 1px rgba(122, 169, 238, 0.35), 0 0 28px rgba(122, 169, 238, 0.35);
+}
+.vault-app.is-receiving small { color: #cfe0ff; }
+.vault-packet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dbe8ff;
+  box-shadow: 0 0 12px 3px rgba(122, 169, 238, 0.85);
+  offset-anchor: center;
+  offset-rotate: 0deg;
+  pointer-events: none;
+}
+@media (max-width: 480px) {
+  .vault-body { padding: 12px 10px 11px; }
+  .vault-row { padding: 0 6px 0 10px; gap: 8px; }
+  .vault-row-text { font-size: 0.8rem; }
+  .vault-tag { font-size: 0.64rem; }
+  .vault-cloud { gap: 6px; margin-top: 48px; }
+  .vault-app b { font-size: 0.68rem; }
+  .vault-app small { font-size: 0.56rem; }
 }
