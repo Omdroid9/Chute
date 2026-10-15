@@ -1242,6 +1242,11 @@ h3 {
   animation: word-rise 900ms var(--ease) forwards;
 }
 .hero-title .word-accent {
+  /* Instrument Serif rides high in the shared line height: its "I" met the "p"/"y"
+     descenders of "Type once." (≈1px) while the gap below was ≈21px. Nudging this line
+     down evens the two gaps without moving anything else. */
+  position: relative;
+  top: 0.12em;
   font-family: var(--serif);
   font-style: italic;
   font-weight: 400;

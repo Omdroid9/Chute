@@ -747,9 +747,12 @@ if (heroOrbBg && !prefersReduced) {
 }
 
 /* ---------- Live routing demo ----------
-   A vanilla-JS port of the app's intent classifier (src/lib/intent.ts) plus
-   the routing precedence from captureRouting.ts: time signals, then intent,
-   then the Apple Notes fallback. Keep the two in sync when signals change. */
+   A vanilla-JS port of the app's classifiers (src/lib/intent.ts, the reminder
+   prefix from src/lib/parser.ts) and the routing precedence and reason wording
+   of src/lib/integrations/captureRouting.ts, for a Mac with Google Calendar
+   connected: "remind me" + time → Reminders, a timed appointment → Google
+   Calendar, any other timed capture → Reminders, then task/note intent, then
+   Apple Notes. Keep this in sync when the app's signals change. */
 
 const DEMO_IMPERATIVES = new Set([
   "apply", "ask", "backup", "book", "bring", "buy", "call", "cancel",
@@ -770,9 +773,35 @@ const DEMO_NOTE_OPENER =
   /^(idea|ideas|note|notes|thought|thoughts|journal|draft|brainstorm|observation|quote)\b/i;
 const DEMO_QUESTION_OPENER =
   /^(what|why|how|when|where|which|who|should|could|would|can|is|are|do|does|did)\b/i;
+const DEMO_CHECKLIST = /(^|\n)\s*-\s*\[[ xX]?\]/;
+// Event vs timed task (intent.ts classifyTimedEvent)
+const DEMO_EVENT_NOUN =
+  /\b(meeting|meet|appt|appointment|call with|sync|standup|stand-up|1:1|one[- ]on[- ]one|interview|lunch|dinner|breakfast|brunch|coffee|drinks|reservation|booking|flight|train|checkup|check-up|doctor|dentist|therapy|gym|class|lesson|session|demo|webinar|conference|party|date night|haircut|viewing|showing|catch[- ]?up|review with|biometrics|visa|embassy|consulate|dmv|notary|immigration|bloodwork|blood test|x-?ray|scan|vaccination|vaccine|physical exam|court|hearing|inspection|orientation|open house|ceremony|screening)\b/i;
+const DEMO_EVENT_WITH = /\bwith\s+[A-Z]/;
+const DEMO_TIME_RANGE =
+  /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-\u2013\u2014]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\bfrom\s+\d{1,2}.*\bto\s+\d{1,2}\b/i;
+const DEMO_EVENT_ERRAND =
+  /\b(?:get(?:ting)?\s+(?:\w+\s+){0,3}done|drop(?:ping)?\s?-?\s?off|pick(?:ing)?\s?-?\s?up)\b/i;
+const DEMO_DEADLINE =
+  /\b(?:by|before|until|due)\s+(?:the\s+|this\s+|next\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|eod|end of (?:day|week|month)|tonight|today|tomorrow|weekend|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+// "remind me to…" and friends (parser.ts REMINDER_INTENT_PREFIX_REGEX)
+const DEMO_REMIND_PREFIX =
+  /^\s*(?:please\s+)?(?:remind\s+me(?:\s+to)?|remember\s+to|set\s+(?:a\s+)?reminder\s+(?:to|for)|add\s+(?:a\s+)?reminder\s+(?:to|for))\s+/i;
 
 function demoFirstWord(text) {
   return (text.trim().split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z'-]/g, "");
+}
+
+// A timed capture is an appointment (calendar) or a timed task (Reminders); returns the
+// appointment signal, or null for a task. Deadlines ("by 5pm") are always tasks.
+function demoTimedEvent(text) {
+  if (DEMO_DEADLINE.test(text)) return null;
+  const noun = text.match(DEMO_EVENT_NOUN);
+  if (noun) return `has “${noun[0].toLowerCase()}”`;
+  if (DEMO_TIME_RANGE.test(text)) return "spans a time range";
+  if (DEMO_EVENT_ERRAND.test(text)) return "a timed errand";
+  if (DEMO_EVENT_WITH.test(text) && !DEMO_IMPERATIVES.has(demoFirstWord(text))) return "a meeting with someone";
+  return null;
 }
 
 function demoLineIsAction(line) {
@@ -803,12 +832,22 @@ function demoRoute(rawText) {
     }
   }
 
-  const time = text.match(DEMO_TIME_REGEX);
-  if (time) {
-    return {
-      chips: ["reminders", "calendar"],
-      reason: `Has a time (“${time[0]}”) → <strong>Reminders</strong> + <strong>Google Calendar</strong>`,
-    };
+  if (DEMO_TIME_REGEX.test(text)) {
+    if (DEMO_REMIND_PREFIX.test(text)) {
+      return { chips: ["reminders"], reason: "Sounds like a reminder → <strong>Reminders</strong>" };
+    }
+    const event = demoTimedEvent(text);
+    if (event) {
+      return {
+        chips: ["calendar"],
+        reason: `Looks like an appointment (${event}) → <strong>Google Calendar</strong>`,
+      };
+    }
+    return { chips: ["reminders"], reason: "Has a time → <strong>Reminders</strong>" };
+  }
+
+  if (DEMO_CHECKLIST.test(text)) {
+    return { chips: ["reminders"], reason: "Looks like a to-do (has a checklist) → <strong>Reminders</strong>" };
   }
 
   const phrase = text.match(DEMO_TASK_PHRASE);
@@ -833,7 +872,7 @@ function demoRoute(rawText) {
   }
 
   if (DEMO_URL.test(text)) {
-    return { chips: ["notes"], reason: `Contains a link → <strong>Apple Notes</strong>` };
+    return { chips: ["notes"], reason: `Looks like a note (contains a link) → <strong>Apple Notes</strong>` };
   }
   if (DEMO_NOTE_OPENER.test(text)) {
     return {
@@ -842,15 +881,15 @@ function demoRoute(rawText) {
     };
   }
   if (DEMO_QUESTION_OPENER.test(text) && text.endsWith("?")) {
-    return { chips: ["notes"], reason: `Is a question → <strong>Apple Notes</strong>` };
+    return { chips: ["notes"], reason: `Looks like a note (is a question) → <strong>Apple Notes</strong>` };
   }
   if (lines.length >= 3 || text.length > 200) {
-    return { chips: ["notes"], reason: `Long-form text → <strong>Apple Notes</strong>` };
+    return { chips: ["notes"], reason: `Looks like a note (long-form text) → <strong>Apple Notes</strong>` };
   }
 
   return {
     chips: ["notes"],
-    reason: `No task signal → <strong>Apple Notes</strong> (safe default)`,
+    reason: `No clear signal → <strong>Apple Notes</strong> (safe default)`,
   };
 }
 
@@ -1181,6 +1220,7 @@ if (xr) {
   };
   const EXAMPLES = [
     { text: "call mom tomorrow at 5pm" },
+    { text: "lunch with Sam friday 1pm" },
     { text: "read later https://stripe.com/pricing" },
     { text: "idea: a weekly digest of saved captures" },
     { text: "remember to renew my passport", fix: true },
@@ -1191,12 +1231,13 @@ if (xr) {
   // The spans each signal reads, using the same patterns as the routing demo
   const evidence = (text) => {
     const spans = [];
-    const all = (re, kind) => {
+    const all = (re, kind, event = false) => {
       for (const m of text.matchAll(new RegExp(re.source, re.flags.replace("g", "") + "g"))) {
-        if (m[0]) spans.push({ start: m.index, end: m.index + m[0].length, kind });
+        if (m[0]) spans.push({ start: m.index, end: m.index + m[0].length, kind, event });
       }
     };
     all(DEMO_TIME_REGEX, "time");
+    if (DEMO_TIME_REGEX.test(text)) all(DEMO_EVENT_NOUN, "time", true); // what makes it an appointment
     all(DEMO_TASK_PHRASE, "todo");
     const first = text.match(/^\s*([a-z'-]+)/i);
     if (first && DEMO_IMPERATIVES.has(first[1].toLowerCase()) && /\s\S/.test(text.trim())) {
@@ -1227,17 +1268,20 @@ if (xr) {
   const verdict = (text) => {
     const route = demoRoute(text);
     const r = route.reason;
-    const winner = r.startsWith("Has a time") ? "time"
+    const winner = /^(Has a time|Looks like an appointment|Sounds like a reminder)/.test(r) ? "time"
       : r.startsWith("Looks like a to-do") ? "todo"
-      : r.startsWith("Contains a link") ? "link"
-      : /^(Looks like a note|Is a question|Long-form)/.test(r) ? "note"
+      : r.includes("(contains a link)") ? "link"
+      : r.startsWith("Looks like a note") ? "note"
       : "default";
-    const span = evidence(text).find((s) => s.kind === winner) || null;
+    const span = evidence(text).find((s) => s.kind === winner && !s.event) || null;
     const quote = span ? `“${text.slice(span.start, span.end).replace(/^https?:\/\//, "")}”` : "";
     const opener = demoFirstWord(text);
+    const appointment = winner === "time" ? text.match(DEMO_EVENT_NOUN) : null;
     const notes = {
       rules: "none set",
-      [winner]: winner === "default" ? "→ Notes" : quote,
+      [winner]: winner === "default" ? "→ Notes"
+        : appointment ? `${quote} + “${appointment[0].toLowerCase()}”`
+        : quote,
     };
     if (winner !== "todo" && DEMO_IMPERATIVES.has(opener) && DEMO_URL.test(text)) {
       notes.todo = `“${opener}”, has a link`;
