@@ -64,7 +64,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -382,7 +382,39 @@
           </p>
         </div>
 
-        <div class="flipboard" data-flipboard data-reveal aria-hidden="true"></div>
+        <!-- Shows its work: a capture is read, the deciding words light up, the checks run in
+             order (first match wins), and the decision arrives with its reason. Uses the same
+             classifier port as the hero demo (demoRoute in main.js). -->
+        <div class="xr" data-xr data-reveal aria-hidden="true">
+          <div class="xr-main">
+            <p class="xr-label">Capture</p>
+            <div class="xr-bar">
+              <img src="/chute-sphere.svg" alt="" width="16" height="16" />
+              <span class="xr-text" data-xr-text></span><span class="xr-caret"></span>
+            </div>
+            <div class="xr-decision" data-xr-decision>
+              <div class="xr-decision-top">
+                <span class="xr-label">Sends to</span>
+                <span class="xr-dests" data-xr-dests></span>
+                <span class="xr-fix" data-xr-fix hidden>Not a to-do?</span>
+              </div>
+              <p class="xr-reason"><span class="xr-reason-dot"></span><span data-xr-reason>&nbsp;</span></p>
+            </div>
+          </div>
+          <div class="xr-side">
+            <p class="xr-label">Checks, in order <span class="xr-label-dim">· first match wins</span></p>
+            <ol class="xr-checks">
+              <li class="xr-check" data-check="rules" style="--ev: #9aa0ad"><span class="xr-mark"></span><span class="xr-name">Your rules</span><span class="xr-hit"></span></li>
+              <li class="xr-check" data-check="time" style="--ev: #7aa9ee"><span class="xr-mark"></span><span class="xr-name">Has a time</span><span class="xr-hit"></span></li>
+              <li class="xr-check" data-check="todo" style="--ev: #4ade80"><span class="xr-mark"></span><span class="xr-name">Sounds like a to-do</span><span class="xr-hit"></span></li>
+              <li class="xr-check" data-check="link" style="--ev: #a78bfa"><span class="xr-mark"></span><span class="xr-name">Contains a link</span><span class="xr-hit"></span></li>
+              <li class="xr-check" data-check="note" style="--ev: #f5c46b"><span class="xr-mark"></span><span class="xr-name">Reads like a note</span><span class="xr-hit"></span></li>
+              <li class="xr-check" data-check="default" style="--ev: #9aa0ad"><span class="xr-mark"></span><span class="xr-name">Safe default</span><span class="xr-hit"></span></li>
+            </ol>
+          </div>
+          <svg class="xr-links" data-xr-links></svg>
+          <span class="xr-cursor" data-xr-cursor><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 3l14 8.5-6.2 1.3 3.6 6.4-2.6 1.4-3.5-6.4L5 19z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg></span>
+        </div>
 
         <div class="release-strip" data-reveal data-reveal-delay="1" aria-label="New in this release">
           <article class="release-card">

@@ -1159,6 +1159,230 @@ if (macTime) {
 }
 
 
+/* ---------- Explainable routing: "shows its work" ---------- */
+// A capture types itself, the words a check reads light up, the checks run in the engine's
+// order (first match wins) and the decision arrives with the app's own reason. Everything
+// comes from the hero demo's classifier port (DEMO_* signals + demoRoute) above.
+const xr = document.querySelector("[data-xr]");
+if (xr) {
+  const textEl = xr.querySelector("[data-xr-text]");
+  const decision = xr.querySelector("[data-xr-decision]");
+  const dests = xr.querySelector("[data-xr-dests]");
+  const reasonEl = xr.querySelector("[data-xr-reason]");
+  const fix = xr.querySelector("[data-xr-fix]");
+  const links = xr.querySelector("[data-xr-links]");
+  const cursor = xr.querySelector("[data-xr-cursor]");
+  const checks = new Map([...xr.querySelectorAll("[data-check]")].map((li) => [li.dataset.check, li]));
+  const ORDER = ["rules", "time", "todo", "link", "note", "default"];
+  const DEST = {
+    reminders: ["reminders", "Reminders"],
+    calendar: ["gcal", "Google Calendar"],
+    notes: ["notes", "Apple Notes"],
+  };
+  const EXAMPLES = [
+    { text: "call mom tomorrow at 5pm" },
+    { text: "read later https://stripe.com/pricing" },
+    { text: "idea: a weekly digest of saved captures" },
+    { text: "remember to renew my passport", fix: true },
+  ];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  // The spans each signal reads, using the same patterns as the routing demo
+  const evidence = (text) => {
+    const spans = [];
+    const all = (re, kind) => {
+      for (const m of text.matchAll(new RegExp(re.source, re.flags.replace("g", "") + "g"))) {
+        if (m[0]) spans.push({ start: m.index, end: m.index + m[0].length, kind });
+      }
+    };
+    all(DEMO_TIME_REGEX, "time");
+    all(DEMO_TASK_PHRASE, "todo");
+    const first = text.match(/^\s*([a-z'-]+)/i);
+    if (first && DEMO_IMPERATIVES.has(first[1].toLowerCase()) && /\s\S/.test(text.trim())) {
+      spans.push({ start: first[0].length - first[1].length, end: first[0].length, kind: "todo" });
+    }
+    all(/\b(?:https?:\/\/|www\.)\S+/i, "link");
+    const opener = text.match(DEMO_NOTE_OPENER);
+    if (opener) spans.push({ start: 0, end: opener[0].length, kind: "note" });
+    spans.sort((a, b) => a.start - b.start || b.end - a.end);
+    const kept = [];
+    let edge = -1;
+    for (const s of spans) if (s.start >= edge) { kept.push(s); edge = s.end; }
+    return kept;
+  };
+
+  const render = (text, hit) => {
+    let html = "";
+    let i = 0;
+    for (const s of evidence(text)) {
+      const on = hit && s.start === hit.start && s.kind === hit.kind ? " is-hit" : "";
+      html += `${esc(text.slice(i, s.start))}<mark class="ev ev-${s.kind}${on}">${esc(text.slice(s.start, s.end))}</mark>`;
+      i = s.end;
+    }
+    textEl.innerHTML = html + esc(text.slice(i));
+  };
+
+  // Which check decides it (from demoRoute's verdict) and what each check noticed
+  const verdict = (text) => {
+    const route = demoRoute(text);
+    const r = route.reason;
+    const winner = r.startsWith("Has a time") ? "time"
+      : r.startsWith("Looks like a to-do") ? "todo"
+      : r.startsWith("Contains a link") ? "link"
+      : /^(Looks like a note|Is a question|Long-form)/.test(r) ? "note"
+      : "default";
+    const span = evidence(text).find((s) => s.kind === winner) || null;
+    const quote = span ? `“${text.slice(span.start, span.end).replace(/^https?:\/\//, "")}”` : "";
+    const opener = demoFirstWord(text);
+    const notes = {
+      rules: "none set",
+      [winner]: winner === "default" ? "→ Notes" : quote,
+    };
+    if (winner !== "todo" && DEMO_IMPERATIVES.has(opener) && DEMO_URL.test(text)) {
+      notes.todo = `“${opener}”, has a link`;
+    }
+    return { route, winner, span, notes };
+  };
+
+  const link = (kind) => {
+    links.replaceChildren();
+    const mark = textEl.querySelector("mark.is-hit");
+    const row = checks.get(kind);
+    if (!mark || !row || getComputedStyle(links).display === "none") return;
+    const box = xr.getBoundingClientRect();
+    const m = mark.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    const a = { x: m.left + m.width / 2 - box.left, y: m.bottom - box.top + 2 };
+    const b = { x: r.left - box.left - 2, y: r.top + r.height / 2 - box.top };
+    links.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M ${a.x} ${a.y} C ${a.x} ${b.y}, ${(a.x + b.x) / 2} ${b.y}, ${b.x} ${b.y}`);
+    path.setAttribute("stroke", getComputedStyle(row).getPropertyValue("--ev").trim());
+    links.append(path);
+    const len = path.getTotalLength();
+    path.animate([{ strokeDasharray: `${len}`, strokeDashoffset: `${len}` }, { strokeDasharray: `${len}`, strokeDashoffset: "0" }],
+      { duration: prefersReduced ? 0 : 420, easing: "ease-out", fill: "forwards" });
+  };
+
+  const decide = (chips, reason, canFix) => {
+    dests.innerHTML = chips
+      .map((c) => `<span class="xr-dest"><span class="brand-logo" data-logo="${DEST[c][0]}"></span>${DEST[c][1]}</span>`)
+      .join("");
+    injectLogos(dests);
+    reasonEl.innerHTML = reason;
+    fix.hidden = !canFix;
+    decision.classList.add("is-on");
+  };
+
+  const reset = () => {
+    textEl.textContent = "";
+    links.replaceChildren();
+    dests.replaceChildren();
+    reasonEl.innerHTML = "&nbsp;";
+    fix.hidden = true;
+    fix.classList.remove("is-pressed");
+    decision.classList.remove("is-on");
+    for (const li of checks.values()) {
+      li.className = "xr-check";
+      li.querySelector(".xr-hit").textContent = "";
+    }
+  };
+
+  // Show the result of the checks; `step` paces them (0 = all at once)
+  const runChecks = async (ex, step, alive) => {
+    const { route, winner, span, notes } = verdict(ex.text);
+    let done = false;
+    for (const name of ORDER) {
+      const li = checks.get(name);
+      if (done) { li.classList.add("is-skip"); continue; }
+      if (step) {
+        li.classList.add("is-checking");
+        await sleep(step);
+        if (!alive()) return null;
+        li.classList.remove("is-checking");
+      }
+      li.querySelector(".xr-hit").textContent = notes[name] || "";
+      if (name === winner) {
+        li.classList.add("is-hit");
+        render(ex.text, span);
+        link(name);
+        done = true;
+      } else {
+        li.classList.add("is-miss");
+      }
+    }
+    return { route, winner };
+  };
+
+  // One-tap correction: the cursor flips a to-do into a note
+  const correct = async (alive) => {
+    const box = xr.getBoundingClientRect();
+    const f = fix.getBoundingClientRect();
+    const to = { x: f.left - box.left + f.width * 0.55, y: f.top - box.top + f.height * 0.6 };
+    cursor.animate(
+      [
+        { opacity: 0, transform: `translate(${to.x + 60}px, ${to.y + 70}px)` },
+        { opacity: 1, transform: `translate(${to.x + 40}px, ${to.y + 50}px)`, offset: 0.2 },
+        { opacity: 1, transform: `translate(${to.x}px, ${to.y}px)` },
+      ],
+      { duration: 800, easing: "cubic-bezier(0.3, 0, 0.2, 1)", fill: "forwards" },
+    );
+    await sleep(820);
+    if (!alive()) return;
+    fix.classList.add("is-pressed");
+    await sleep(160);
+    fix.classList.remove("is-pressed");
+    decide(["notes"], "Changed by you → <strong>Apple Notes</strong>", false);
+    await sleep(900);
+    cursor.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" });
+  };
+
+  const play = async (ex, alive) => {
+    reset();
+    for (let i = 1; i <= ex.text.length; i += 1) {
+      render(ex.text.slice(0, i), null);
+      await sleep(40);
+      if (!alive()) return;
+    }
+    await sleep(350);
+    if (!alive()) return;
+    const result = await runChecks(ex, 260, alive);
+    if (!result || !alive()) return;
+    await sleep(320);
+    decide(result.route.chips, result.route.reason, result.winner === "todo");
+    await sleep(2600);
+    if (ex.fix && alive()) {
+      await correct(alive);
+      await sleep(1800);
+    }
+  };
+
+  if (prefersReduced) {
+    render(EXAMPLES[0].text, null);
+    runChecks(EXAMPLES[0], 0, () => true).then((r) => r && decide(r.route.chips, r.route.reason, false));
+  } else {
+    let run = 0;
+    let index = 0;
+    const loop = async (token) => {
+      const alive = () => token === run;
+      while (alive()) {
+        await play(EXAMPLES[index % EXAMPLES.length], alive);
+        if (!alive()) return;
+        index += 1;
+        await sleep(400);
+      }
+    };
+    new IntersectionObserver(
+      ([entry]) => {
+        run += 1; // stops any running cycle
+        if (entry.isIntersecting) loop(run);
+      },
+      { threshold: 0.35 },
+    ).observe(xr);
+  }
+}
+
 /* ---------- Tabler icons used by both keyboards (MIT, tabler.io/icons) ---------- */
 const ICON = {
   brightnessDown: '<path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M12 5l0 .01"/><path d="M17 7l0 .01"/><path d="M19 12l0 .01"/><path d="M17 17l0 .01"/><path d="M12 19l0 .01"/><path d="M7 17l0 .01"/><path d="M5 12l0 .01"/><path d="M7 7l0 .01"/>',
@@ -1343,230 +1567,6 @@ if (summonBand && summonKeyboard) {
     { threshold: [0, 0.45] },
   );
   bandObserver.observe(summonBand);
-}
-
-/* ---------- Routing board (vanilla port of Aceternity UI "Text Flipping Board") ---------- */
-// A split-flap departures board in "It decides where things go": each row flips in a capture
-// and where Chute sent it. Same flip mechanics, timings and colors as the original.
-const flipboard = document.querySelector("[data-flipboard]");
-if (flipboard) {
-  const FLAP_CHARS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$()-+&=;:'\"%,./?°";
-  // Brief color flashes while scrambling (Tailwind red/orange/yellow/green/blue/violet/white)
-  const ACCENTS = [
-    { top: "#e7000b", bottom: "#c10007", text: "#fff" },
-    { top: "#ff6900", bottom: "#f54900", text: "#fff" },
-    { top: "#fdc700", bottom: "#f0b100", text: "#171717" },
-    { top: "#00a63e", bottom: "#008236", text: "#fff" },
-    { top: "#155dfc", bottom: "#1447e6", text: "#fff" },
-    { top: "#7f22fe", bottom: "#7008e7", text: "#fff" },
-    { top: "#ffffff", bottom: "#f5f5f5", text: "#171717" },
-  ];
-  const FACE = "#171717";
-  const FALLING = "#262626";
-  const INK = "#fff";
-  const COL_DELAY = 30;
-  const ROW_DELAY = 20;
-  const STEP_MS = 55;
-  const FLIP_MS = 350;
-  const FALL_EASE = "cubic-bezier(0.55, 0.055, 0.675, 0.19)";
-  const RISE_EASE = "cubic-bezier(0.33, 1.55, 0.64, 1)";
-  const PAGE_EVERY = 7000;
-
-  // [what was typed, where it went]: every thought fits 14 columns, every pair fits 22
-  const CAPTURES = [
-    ["CALL MOM 5PM", "REMINDERS"],
-    ["Q3 REVIEW THU", "CALENDAR"],
-    ["DEPLOY FRI", "SLACK"],
-    ["PRICING IDEA", "NOTION"],
-    ["BOOK FLIGHTS", "TASKS"],
-    ["STRETCH AT 6", "REMINDERS"],
-    ["DENTIST TUE 9", "CALENDAR"],
-    ["STANDUP RECAP", "SLACK"],
-    ["READING LIST", "NOTES"],
-    ["RENEW PASSPORT", "TASKS"],
-    ["PAY RENT FRI", "REMINDERS"],
-    ["1:1 SAM 3PM", "CALENDAR"],
-    ["TELL #ENG FRI", "SLACK"],
-    ["GIFT IDEAS", "NOTION"],
-    ["RAID SAT 9PM", "DISCORD"],
-  ];
-  const chunk = (list, n) =>
-    Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
-  // Wide: a header row, then five captures with the destination right-aligned
-  const WIDE = {
-    cols: 22,
-    rows: 6,
-    pages: chunk(CAPTURES, 5).map((page) => [
-      "CAPTURED" + " ".repeat(22 - 8 - 7) + "SENT TO",
-      ...page.map(([t, d]) => t + " ".repeat(22 - t.length - d.length) + d),
-    ]),
-  };
-  // Phones: three captures, the thought on one row and its destination under it
-  const NARROW = {
-    cols: 14,
-    rows: 6,
-    pages: chunk(CAPTURES, 3).map((page) => page.flatMap(([t, d]) => [t, d.padStart(14)])),
-  };
-
-  const grid = document.createElement("div");
-  grid.className = "fb-grid";
-  flipboard.append(grid);
-
-  const glyph = (ch) => (ch === " " ? " " : ch);
-  const paint = (half, ch, bg, ink) => {
-    half.style.background = bg;
-    half.firstChild.textContent = glyph(ch);
-    half.firstChild.style.color = ink;
-  };
-
-  const makeCell = () => {
-    const el = document.createElement("div");
-    el.className = "fb-cell";
-    el.innerHTML =
-      '<div class="fb-flap"><div class="fb-hinge"><i></i><i></i><i></i></div>' +
-      '<div class="fb-half fb-top"><span> </span></div>' +
-      '<div class="fb-half fb-bottom"><span> </span><i class="fb-shine"></i></div>' +
-      '<div class="fb-half fb-top fb-fall"><span> </span><i class="fb-shade"></i></div>' +
-      '<div class="fb-half fb-bottom fb-rise"><span> </span><i class="fb-shade"></i></div>' +
-      '<i class="fb-split"></i></div><div class="fb-stripes"></div>';
-    const [top, bottom, fall, rise] = el.querySelectorAll(".fb-half");
-    return {
-      el, top, bottom, fall, rise,
-      shine: bottom.querySelector(".fb-shine"),
-      fallShade: fall.querySelector(".fb-shade"),
-      riseShade: rise.querySelector(".fb-shade"),
-      cur: " ", acc: null, target: " ", plan: null, anims: [],
-    };
-  };
-
-  // One flip: the old top half falls away, the new bottom half swings up behind it
-  const flip = (c, ch, acc) => {
-    const prev = c.cur;
-    const prevAcc = c.acc;
-    c.cur = ch;
-    c.acc = acc;
-    paint(c.top, ch, acc?.top ?? FACE, acc?.text ?? INK);
-    paint(c.bottom, ch, acc?.bottom ?? FACE, acc?.text ?? INK);
-    paint(c.fall, prev, prevAcc?.top ?? FALLING, prevAcc?.text ?? INK);
-    paint(c.rise, ch, acc?.bottom ?? FACE, acc?.text ?? INK);
-    c.el.classList.add("is-live");
-    for (const a of c.anims) a.cancel();
-    const rise = { duration: FLIP_MS * 0.85, delay: FLIP_MS * 0.5, fill: "both" };
-    c.anims = [
-      c.fall.animate([{ transform: "rotateX(0deg)" }, { transform: "rotateX(-100deg)" }],
-        { duration: FLIP_MS, easing: FALL_EASE, fill: "forwards" }),
-      c.fallShade.animate([{ opacity: 0 }, { opacity: 0.6 }], { duration: FLIP_MS, fill: "forwards" }),
-      c.rise.animate([{ transform: "rotateX(90deg)" }, { transform: "rotateX(0deg)" }],
-        { ...rise, easing: RISE_EASE }),
-      c.riseShade.animate([{ opacity: 0.4 }, { opacity: 0 }], rise),
-      c.shine.animate([{ opacity: 0.5 }, { opacity: 0 }],
-        { duration: FLIP_MS * 1.3, easing: "ease-out", fill: "forwards" }),
-    ];
-  };
-
-  // Every scrambling cell is advanced from one animation-frame loop
-  const busy = new Set();
-  let raf = null;
-  const tick = (now) => {
-    raf = null;
-    for (const c of busy) {
-      const p = c.plan;
-      if (now < p.nextAt) continue;
-      p.i += 1;
-      const last = p.i === p.count;
-      const ch = last ? p.target : FLAP_CHARS[1 + Math.floor(Math.random() * (FLAP_CHARS.length - 1))];
-      const acc = !last && Math.random() < 0.2
-        ? ACCENTS[Math.floor(Math.random() * ACCENTS.length)]
-        : null;
-      flip(c, ch, acc);
-      if (last) {
-        c.plan = null;
-        busy.delete(c);
-      } else {
-        p.nextAt += STEP_MS;
-      }
-    }
-    if (busy.size) raf = requestAnimationFrame(tick);
-  };
-
-  let layout = null;
-  let cells = [];
-  let page = 0;
-  const showPage = (rows) => {
-    const t0 = performance.now();
-    cells.forEach((c, idx) => {
-      const r = Math.floor(idx / layout.cols);
-      const col = idx % layout.cols;
-      const raw = (rows[r] ?? "")[col] ?? " ";
-      const target = FLAP_CHARS.includes(raw.toUpperCase()) ? raw.toUpperCase() : " ";
-      if (target === c.target) return;
-      c.target = target;
-      if (prefersReduced) {
-        c.cur = target;
-        paint(c.top, target, FACE, INK);
-        paint(c.bottom, target, FACE, INK);
-        return;
-      }
-      if (target === " " && c.cur === " ") {
-        c.plan = null;
-        busy.delete(c);
-        return;
-      }
-      const count = target === " "
-        ? 8 + Math.floor(Math.random() * 8)
-        : 25 + Math.floor(Math.random() * 15);
-      c.plan = { i: 0, count, target, nextAt: t0 + col * COL_DELAY + r * ROW_DELAY };
-      busy.add(c);
-    });
-    if (busy.size && !raf) raf = requestAnimationFrame(tick);
-  };
-
-  const narrow = window.matchMedia("(max-width: 640px)");
-  let onScreen = false;
-  let cycle = null;
-  const startCycle = () => {
-    if (cycle || prefersReduced) return;
-    cycle = setInterval(() => {
-      page = (page + 1) % layout.pages.length;
-      showPage(layout.pages[page]);
-    }, PAGE_EVERY);
-  };
-  const stopCycle = () => {
-    clearInterval(cycle);
-    cycle = null;
-  };
-
-  const build = () => {
-    for (const c of cells) for (const a of c.anims) a.cancel();
-    busy.clear();
-    layout = narrow.matches ? NARROW : WIDE;
-    flipboard.style.setProperty("--cols", layout.cols);
-    cells = Array.from({ length: layout.cols * layout.rows }, makeCell);
-    grid.replaceChildren(...cells.map((c) => c.el));
-    page = 0;
-    if (onScreen || prefersReduced) showPage(layout.pages[0]);
-  };
-
-  build();
-  narrow.addEventListener("change", () => {
-    stopCycle();
-    build();
-    if (onScreen) startCycle();
-  });
-  new IntersectionObserver(
-    ([entry]) => {
-      const wasOnScreen = onScreen;
-      onScreen = entry.isIntersecting;
-      if (onScreen && !wasOnScreen) {
-        // first sight flips the board in from blank; later visits just resume the cycle
-        if (cells.every((c) => c.target === " ")) showPage(layout.pages[page]);
-        startCycle();
-      } else if (!onScreen) {
-        stopCycle();
-      }
-    },
-    { threshold: 0.35 },
-  ).observe(flipboard);
 }
 
 /* ---------- MacBook scroll (vanilla port of Aceternity UI "MacBook Scroll") ---------- */
