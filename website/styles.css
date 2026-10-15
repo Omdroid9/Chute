@@ -21,8 +21,10 @@
      sizes and a pixel-match to the real app's UI. Geist Mono for keys,
      times, and numbers; Instrument Serif italic for the accents. */
   --font: "Poppins", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* Brand display: Apple's rounded system font on Mac, Poppins everywhere else. */
-  --font-display: ui-rounded, "SF Pro Rounded", "Poppins", var(--font);
+  /* Brand display: Poppins on every device. (ui-rounded used to swap in Apple's rounded
+     system font, but only Safari supports it, so iPhones showed a different face than
+     desktop Chrome.) */
+  --font-display: "Poppins", var(--font);
   --mono: "Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo,
     Consolas, monospace;
   --serif: "Instrument Serif", "Iowan Old Style", "Apple Garamond",
@@ -64,8 +66,7 @@ body {
 .mock-history-search-count,
 .site-footer-base,
 .bento-cal-time,
-.hero-toast,
-.scroll-progress {
+.hero-toast {
   font-feature-settings: "tnum" 1, "kern" 1;
   font-variant-numeric: tabular-nums;
 }
@@ -166,6 +167,8 @@ a {
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.4s var(--ease), backdrop-filter 0.4s var(--ease),
+    border-color 0.4s var(--ease);
 }
 
 .site-nav-inner {
@@ -176,6 +179,13 @@ a {
   display: flex;
   align-items: center;
   gap: 2rem;
+  border: 1px solid transparent;
+  border-radius: 0;
+  transition: max-width 0.4s var(--ease), padding 0.4s var(--ease),
+    gap 0.4s var(--ease), margin-top 0.4s var(--ease),
+    border-radius 0.4s var(--ease), background 0.4s var(--ease),
+    border-color 0.4s var(--ease), box-shadow 0.4s var(--ease),
+    backdrop-filter 0.4s var(--ease);
 }
 
 /* Wordmark carries the display face — the one place the brand's own
@@ -1114,20 +1124,6 @@ h3 {
    ANIMATIONS — added pass
    ========================================================= */
 
-/* Scroll progress bar */
-.scroll-progress {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  z-index: 100;
-  background: linear-gradient(90deg, var(--accent), #b8d4ff);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 0.05s linear;
-  pointer-events: none;
-}
 
 /* Subtle grain over everything */
 .bg-noise {
@@ -1185,10 +1181,31 @@ h3 {
   }
 }
 
-/* Nav scrolled state + brand orb spin on hover */
+/* Nav scrolled state: the full-width bar collapses into a floating, blurred
+   pill (resizable-navbar effect). The header goes transparent and the inner
+   becomes the pill, so content scrolls under the clear upper region. */
 .site-nav.is-scrolled {
-  background: rgba(0, 0, 0, 0.88);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: transparent;
+  backdrop-filter: none;
+  border-bottom-color: transparent;
+}
+
+.site-nav.is-scrolled .site-nav-inner {
+  max-width: 900px;
+  margin-top: 0.6rem;
+  height: auto;
+  gap: 1.5rem;
+  padding: 0.42rem 0.5rem 0.42rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(16, 16, 20, 0.72);
+  border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 14px 34px -16px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.site-nav.is-scrolled .nav-cta {
+  padding: 0.4rem 0.9rem;
 }
 
 .brand-orb {
@@ -2593,7 +2610,7 @@ h3 {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.65rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
@@ -4036,6 +4053,15 @@ main h2 .accent-serif {
   color: var(--muted-deep);
 }
 
+@media (max-width: 480px) {
+  .routing-demo-foot .routing-demo-keys {
+    display: none;
+  }
+  .routing-demo-foot .demo-send-btn {
+    margin-left: auto;
+  }
+}
+
 .routing-demo-keys {
   display: inline-flex;
   align-items: center;
@@ -4782,7 +4808,7 @@ main h2 .accent-serif {
    ===================================================================== */
 
 .hero-stacked {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 3rem;
   text-align: center;
   min-height: auto;
@@ -4870,7 +4896,7 @@ main h2 .accent-serif {
   position: absolute;
   left: 8%;
   top: 50%;
-  width: 34rem;
+  width: min(34rem, 92%);
   height: 24rem;
   transform: translateY(-50%);
   background: radial-gradient(closest-side, rgba(122, 169, 238, 0.10), transparent 75%);
@@ -4892,33 +4918,134 @@ main h2 .accent-serif {
   }
 }
 
-/* Stage: keys press in sequence, bar drops after */
-.summon-band-keys {
+/* Stage: the keyboard presses ⌘ ⇧ Space, then the bar drops.
+   Keyboard = vanilla port of Aceternity UI "Keyboard" (ui.aceternity.com/components/keyboard):
+   same rows, key sizes, legends, colors and shadows. Pressed keys also get an accent tint so
+   the shortcut reads at a glance (the original only shrinks them to 98%). */
+.lkb {
+  width: fit-content;
+  margin: 0 auto 2rem;
+  zoom: 0.75;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+}
+@media (min-width: 400px) { .lkb { zoom: 0.8; } }
+@media (min-width: 480px) { .lkb { zoom: 1.05; } }
+@media (min-width: 640px) { .lkb { zoom: 1.4; } }
+@media (min-width: 900px) { .lkb { zoom: 1; margin-left: 0; } }
+@media (min-width: 1024px) { .lkb { zoom: 1.2; } }
+@media (min-width: 1136px) { .lkb { zoom: 1.35; } }
+
+.lkb-pad {
+  height: 100%;
+  width: fit-content;
+  border-radius: 0.75rem;
+  background: #e5e5e5;
+  background: oklch(0.922 0 0); /* neutral-200 */
+  padding: 0.25rem;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.05),
+    0 1px 3px 0 rgb(0 0 0 / 0.05),
+    0 1px 2px -1px rgb(0 0 0 / 0.05);
+}
+.lkb-row {
+  margin-bottom: 2px;
   display: flex;
-  gap: 0.7rem;
-  margin-bottom: 2rem;
+  width: 100%;
+  flex-shrink: 0;
+  gap: 2px;
 }
-
-.skey {
-  font-family: var(--mono);
-  font-size: 1.5rem;
-  padding: 0.85rem 1.4rem;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #23232b, #17171d);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-bottom-width: 4px;
-  color: var(--text-strong);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+.lkb-wrap {
+  border-radius: 4px;
+  padding: 0.5px;
 }
-
-[data-summon-band].in-view .skey-1 { animation: skey-press 0.55s var(--ease) 0.15s both; }
-[data-summon-band].in-view .skey-2 { animation: skey-press 0.55s var(--ease) 0.3s both; }
-[data-summon-band].in-view .skey-3 { animation: skey-press 0.55s var(--ease) 0.45s both; }
-
-@keyframes skey-press {
-  0%, 100% { transform: translateY(0); border-bottom-width: 4px; }
-  45% { transform: translateY(3px); border-bottom-width: 1px; }
+.lkb-key {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: 3.5px;
+  background: #f3f4f6;
+  background: oklch(0.967 0.003 264.542); /* gray-100 */
+  color: #404040; /* neutral-700 */
+  font: inherit;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 1px 0 rgba(0, 0, 0, 0.1),
+    0 1px 0 0 #fff inset;
+  transition:
+    transform 75ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
+.lkb-key:active,
+.lkb-key.is-pressed {
+  transform: scale(0.98);
+}
+.lkb-key.is-pressed {
+  background: #d9e5f8;
+  box-shadow:
+    0 0 1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 1px 0 rgba(0, 0, 0, 0.1),
+    0 1px 0 0 rgba(255, 255, 255, 0.5),
+    0 0 0 1px rgba(122, 169, 238, 0.9),
+    0 0 10px rgba(122, 169, 238, 0.55);
+}
+.lkb-face {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 5px;
+  pointer-events: none;
+}
+.lkb-face svg { width: 6px; height: 6px; }
+.lkb-face .lkb-mt { margin-top: 0.25rem; }
+/* wide keys: legend in a bottom corner */
+.lkb-face.is-l { align-items: flex-start; justify-content: flex-end; padding: 0 0 2px 4px; }
+.lkb-face.is-r { align-items: flex-end; justify-content: flex-end; padding: 0 4px 2px 0; }
+/* modifier keys: symbol top-left, word bottom-left */
+.lkb-face.is-mod { align-items: flex-start; justify-content: space-between; padding: 0.25rem; }
+.lkb-key.w-10 { width: 2.5rem; }
+.lkb-key.w-caps { width: 2.8rem; }
+.lkb-key.w-ret { width: 2.85rem; }
+.lkb-key.w-shift { width: 3.65rem; }
+.lkb-key.w-8 { width: 2rem; }
+.lkb-key.w-space { width: 8.2rem; }
+.lkb-key.h-3 { height: 0.75rem; }
+.lkb-wrap.tl { border-top-left-radius: 0.75rem; }
+.lkb-wrap.tr { border-top-right-radius: 0.75rem; }
+.lkb-wrap.bl { border-bottom-left-radius: 0.75rem; }
+.lkb-wrap.br { border-bottom-right-radius: 0.75rem; }
+.lkb-key.tl { border-top-left-radius: 0.5rem; }
+.lkb-key.tr { border-top-right-radius: 0.5rem; }
+.lkb-key.bl { border-bottom-left-radius: 0.5rem; }
+.lkb-key.br { border-bottom-right-radius: 0.5rem; }
+.lkb-power {
+  display: block;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 999px;
+  padding: 1px;
+  background-image: linear-gradient(to bottom, #d4d4d4, #e5e5e5, #d4d4d4);
+}
+.lkb-power > span { display: block; height: 100%; width: 100%; border-radius: 999px; background: #f5f5f5; }
+.lkb-arrows {
+  display: flex;
+  height: 1.5rem;
+  width: 4.9rem;
+  align-items: center;
+  justify-content: flex-end;
+  border-radius: 4px;
+  padding: 0.5px;
+}
+.lkb-arrows-col { display: flex; flex-direction: column; }
 
 .summon-band-bar {
   display: flex;
@@ -5017,7 +5144,6 @@ main h2 .accent-serif {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-summon-band].in-view .skey,
   [data-summon-band].in-view .summon-band-bar,
   [data-summon-band].in-view .summon-band-reason {
     animation: none;
@@ -5092,4 +5218,399 @@ main h2 .accent-serif {
 .back-to-top:hover {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ===== MacBook scroll =====
+   Vanilla port of Aceternity UI "MacBook Scroll" (ui.aceternity.com/components/macbook-scroll).
+   Lid, base and keyboard keep the reference's rendered sizes, colors, shadows and transforms
+   (light mode). The whole machine is scaled by --mbs-s (set in main.js from the viewport) so it
+   can be larger than the original and still fit; the scroll animation itself is a scroll-driven
+   animation built in main.js from the original useScroll/useTransform ranges. */
+.mbs {
+  display: flex;
+  min-height: 200vh;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 6rem 1.5rem 0;
+  perspective: 800px;
+  isolation: isolate; /* keeps the -z base inside this section, as in the original */
+  --mbs-s: 0.55;
+}
+@media (min-width: 520px) {
+  .mbs { --mbs-s: 0.75; }
+}
+@media (min-width: 768px) {
+  .mbs { padding-top: 7rem; --mbs-s: 1; }
+}
+
+/* Heading uses the same eyebrow + h2 + serif accent as every other section */
+.mbs-title {
+  margin: 0 0 3rem;
+  text-align: center;
+}
+.mbs-title .eyebrow {
+  justify-content: center;
+}
+.mbs-title h2 {
+  text-wrap: balance;
+}
+
+/* Scales the lid + base together; origin at the top so it grows downward */
+.mbs-device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: scale(var(--mbs-s));
+  transform-origin: 50% 0;
+}
+
+/* ---------- Lid ---------- */
+.mbs-lid {
+  position: relative;
+  perspective: 800px;
+}
+.mbs-lid-back {
+  position: relative;
+  height: 12rem;
+  width: 32rem;
+  border-radius: 1rem;
+  background: #010101;
+  padding: 0.5rem;
+  transform: perspective(800px) rotateX(-25deg) translateZ(0px);
+  transform-origin: bottom;
+  transform-style: preserve-3d;
+}
+.mbs-lid-back-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: #010101;
+  box-shadow: 0 2px 0 2px #171717 inset;
+}
+.mbs-lid-logo {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
+  color: #fff;
+}
+.mbs-screen {
+  position: absolute;
+  inset: 0;
+  height: 24rem;
+  width: 32rem;
+  border-radius: 1rem;
+  background: #010101;
+  padding: 0.5rem;
+  transform-style: preserve-3d;
+  transform-origin: top;
+  /* start state (progress 0) so it's right before main.js runs */
+  transform: translateY(0px) scaleX(1.2) scaleY(0.6) rotateX(-28deg);
+}
+.mbs-screen-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+  background: #272729;
+}
+.mbs-screen-img {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: clip;
+}
+
+/* ---------- Base ---------- */
+.mbs-base {
+  position: relative;
+  z-index: -10;
+  height: 22rem;
+  width: 32rem;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #e5e7eb;
+  background: oklch(0.928 0.006 264.531); /* tailwind v4 gray-200 */
+}
+.mbs-bar-wrap {
+  position: relative;
+  height: 2.5rem;
+  width: 100%;
+}
+.mbs-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  height: 1rem;
+  width: 80%;
+  background: #050505;
+}
+.mbs-deck {
+  position: relative;
+  display: flex;
+}
+.mbs-speaker-col {
+  margin: 0 auto;
+  height: 100%;
+  width: 10%;
+  overflow: hidden;
+}
+.mbs-keypad-col {
+  margin: 0 auto;
+  height: 100%;
+  width: 80%;
+}
+.mbs-speaker {
+  margin-top: 0.5rem;
+  display: flex;
+  height: 10rem;
+  gap: 2px;
+  padding: 0 0.5px;
+  background-image: radial-gradient(circle, #08080a 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+}
+.mbs-trackpad {
+  margin: 0.25rem auto;
+  height: 8rem;
+  width: 40%;
+  border-radius: 0.75rem;
+  box-shadow: 0 0 1px 1px #00000020 inset;
+}
+.mbs-lip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
+  height: 0.5rem;
+  width: 5rem;
+  border-radius: 1.5rem 1.5rem 0 0;
+  background-image: linear-gradient(to top, #272729, #050505);
+}
+.mbs-badge {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+}
+.mbs-badge-mark {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  transform: rotate(-12deg);
+  background: radial-gradient(circle at 35% 30%, #cfe0ff, #5b8ad8 70%);
+  box-shadow: 0 0 0 2px #0b0b0f;
+  color: #0b0b0f;
+}
+.mbs-badge-mark svg { width: 1.35rem; height: 1.35rem; }
+
+/* ---------- Keypad ---------- */
+.mbs-keypad {
+  margin: 0 0.25rem;
+  height: 100%;
+  transform: translateZ(0);
+  border-radius: 0.375rem;
+  background: #050505;
+  padding: 0.25rem;
+  will-change: transform;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+}
+.kb-row {
+  margin-bottom: 2px;
+  display: flex;
+  width: 100%;
+  flex-shrink: 0;
+  gap: 2px;
+}
+/* KBtn: backlit outer ring + key cap + label stack */
+.kb {
+  transform: translateZ(0);
+  border-radius: 4px;
+  padding: 0.5px;
+  will-change: transform;
+  background: rgb(255 255 255 / 0.2);
+  box-shadow: 0 20px 25px -5px #fff, 0 8px 10px -6px #fff;
+}
+.kb-cap {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3.5px;
+  background: #0a090d;
+  box-shadow: 0 -0.5px 2px 0 #0d0d0f inset, -0.5px 0 2px 0 #0d0d0f inset;
+}
+.kb-face {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 5px;
+  color: #fff;
+}
+.kb-face svg { width: 6px; height: 6px; }
+.kb-face .kb-fn-label { margin-top: 0.25rem; display: inline-block; }
+.kb-face > span { display: block; }
+/* wide modifier keys (left-aligned labels) */
+.kb-cap.is-l { align-items: flex-end; justify-content: flex-start; padding: 0 0 2px 4px; }
+.kb-cap.is-r { align-items: flex-end; justify-content: flex-end; padding: 0 4px 2px 0; }
+.kb-cap.is-l .kb-face { align-items: flex-start; }
+.kb-cap.is-r .kb-face { align-items: flex-end; }
+.kb-cap.w-10 { width: 2.5rem; }
+.kb-cap.w-caps { width: 2.8rem; }
+.kb-cap.w-ret { width: 2.85rem; }
+.kb-cap.w-shift { width: 3.65rem; }
+.kb-cap.w-8 { width: 2rem; }
+.kb-cap.w-space { width: 8.2rem; }
+.kb-cap.h-3 { height: 0.75rem; }
+/* bottom-row modifiers: symbol on one corner, word on the other */
+.kb-face.is-mod { height: 100%; justify-content: space-between; padding: 4px 0; }
+.kb-mod-r { display: flex; width: 100%; justify-content: flex-end; padding-right: 0.25rem; }
+.kb-mod-l { display: flex; width: 100%; justify-content: flex-start; padding-left: 0.25rem; }
+.kb-power {
+  height: 1rem;
+  width: 1rem;
+  border-radius: 999px;
+  padding: 1px;
+  background-image: linear-gradient(to bottom, #171717 20%, #000 50%, #171717 95%);
+}
+.kb-power > span { display: block; height: 100%; width: 100%; border-radius: 999px; background: #000; }
+.kb-arrows {
+  margin-top: 2px;
+  display: flex;
+  height: 1.5rem;
+  width: 4.9rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  border-radius: 4px;
+  padding: 0.5px;
+}
+.kb-arrows-row { display: flex; }
+
+/* ---------- Screen content: Chute Library (stands in for the reference's app screenshot) ---------- */
+.mbs-app {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0d0e12;
+  color: #d9dce3;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 7px;
+  line-height: 1.35;
+  text-align: left;
+}
+.mbs-app-top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: #111217;
+}
+.mbs-app-lights { display: flex; gap: 4px; margin-right: 6px; }
+.mbs-app-lights i { width: 6px; height: 6px; border-radius: 50%; background: #3a3b42; }
+.mbs-app-brand { font-weight: 600; font-size: 8px; color: #f3f4f8; }
+.mbs-app-brand em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; font-size: 9px; color: #9fb8e6; margin-left: 2px; }
+.mbs-app-search {
+  margin-left: auto;
+  width: 120px;
+  height: 13px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #6f7380;
+  font-size: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+}
+.mbs-app-new {
+  height: 13px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f3f4f8;
+  color: #111;
+  font-size: 6px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+.mbs-app-body { flex: 1; display: flex; min-height: 0; }
+.mbs-app-side {
+  flex: 0 0 118px;
+  padding: 9px 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: #0f1015;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mbs-app-h { font-size: 5.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #5d616d; margin-bottom: 3px; }
+.mbs-app-nav { display: flex; flex-direction: column; gap: 1px; }
+.mbs-app-nav span {
+  display: flex;
+  justify-content: space-between;
+  padding: 2.5px 5px;
+  border-radius: 3px;
+  color: #a3a7b3;
+}
+.mbs-app-nav span b { font-weight: 400; color: #5d616d; font-variant-numeric: tabular-nums; }
+.mbs-app-nav span.is-on { background: rgba(122, 169, 238, 0.12); color: #e9eefb; }
+.mbs-app-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.mbs-app-tags span { padding: 1.5px 5px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.08); color: #a3a7b3; font-size: 6px; }
+.mbs-app-dest span { display: flex; align-items: center; gap: 4px; padding: 2px 5px; color: #a3a7b3; }
+.mbs-app-dest i { width: 4px; height: 4px; border-radius: 50%; background: #4ade80; }
+.mbs-app-dest i.off { background: #3a3b42; }
+.mbs-app-dest em { margin-left: auto; font-style: normal; color: #5d616d; font-size: 5.5px; }
+.mbs-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mbs-app-head { padding: 10px 12px 7px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.mbs-app-head strong { display: block; font-size: 11px; font-weight: 600; color: #f3f4f8; }
+.mbs-app-head strong em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; color: #9fb8e6; }
+.mbs-app-head small { font-size: 6px; color: #6f7380; }
+.mbs-app-row {
+  padding: 5px 12px 5.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+.mbs-app-row.is-on { background: rgba(122, 169, 238, 0.07); box-shadow: inset 2px 0 0 #7aa9ee; }
+.mbs-app-meta { display: flex; align-items: center; gap: 4px; font-size: 5.5px; color: #5d616d; }
+.mbs-app-meta time { font-family: "Geist Mono", ui-monospace, monospace; }
+.mbs-app-meta i { width: 2px; height: 2px; border-radius: 50%; background: #3a3b42; }
+.mbs-app-flag { margin-left: auto; padding: 0.5px 4px; border-radius: 3px; font-size: 5px; color: #f5c46b; background: rgba(245, 196, 107, 0.1); }
+.mbs-app-text { margin: 2px 0 3px; font-size: 7.5px; color: #eceef3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbs-app-foot { display: flex; align-items: center; gap: 3px; }
+.mbs-app-chip {
+  display: grid;
+  place-items: center;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  font-size: 5px;
+  font-weight: 600;
+  color: #cfe0ff;
+  background: rgba(122, 169, 238, 0.16);
+}
+.mbs-app-when { margin-left: 3px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 5.5px; color: #8a8f9c; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mbs { min-height: auto; }
+}
+
+/* Decorative glows and bleed must never widen the page on phones.
+   clip (not hidden) so position: sticky inside main keeps working. */
+main {
+  overflow-x: clip;
 }

@@ -64,14 +64,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
 
-    <div class="scroll-progress" aria-hidden="true"></div>
     <div class="bg-noise" aria-hidden="true"></div>
 
     <header class="site-nav" data-reveal>
@@ -190,6 +189,120 @@
         <div class="spec-item"><span class="spec-key">Destinations</span><span class="spec-val">8 built in</span></div>
       </section>
 
+      <!-- MacBook scroll — vanilla port of Aceternity UI "MacBook Scroll" (driven by main.js) -->
+      <section class="mbs" aria-labelledby="mbs-title" data-mbs>
+        <div class="mbs-title" data-mbs-title>
+          <p class="eyebrow">It lives in your menu bar</p>
+          <h2 id="mbs-title">Summon it over anything.<br />File the thought. <span class="accent-serif">Keep working.</span></h2>
+        </div>
+        <div class="mbs-device" data-mbs-device>
+        <div class="mbs-lid" aria-hidden="true">
+          <div class="mbs-lid-back">
+            <div class="mbs-lid-back-inner">
+              <svg class="mbs-lid-logo" viewBox="0 0 60 60" fill="currentColor"><path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z"/><path d="M16 27 L44 27 L34 46 L26 46 Z"/><rect x="24" y="45" width="12" height="9" rx="2"/></svg>
+            </div>
+          </div>
+          <div class="mbs-screen" data-mbs-screen>
+            <div class="mbs-screen-bg"></div>
+            <div class="mbs-screen-img">
+              <div class="mbs-app">
+                <div class="mbs-app-top">
+                  <span class="mbs-app-lights"><i></i><i></i><i></i></span>
+                  <span class="mbs-app-brand">Chute<em>Library</em></span>
+                  <span class="mbs-app-search">Search captures…</span>
+                  <span class="mbs-app-new">+ New capture</span>
+                </div>
+                <div class="mbs-app-body">
+                  <aside class="mbs-app-side">
+                    <div>
+                      <div class="mbs-app-h">Views</div>
+                      <div class="mbs-app-nav">
+                        <span class="is-on">All captures <b>24</b></span>
+                        <span>Today <b>6</b></span>
+                        <span>This week <b>17</b></span>
+                        <span>Pending review <b>1</b></span>
+                        <span>Sync failed <b>0</b></span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="mbs-app-h">Tags</div>
+                      <div class="mbs-app-tags"><span>Work</span><span>Personal</span><span>Idea</span><span>Untagged</span></div>
+                    </div>
+                    <div>
+                      <div class="mbs-app-h">Destinations</div>
+                      <div class="mbs-app-dest">
+                        <span><i></i>Reminders<em>Connected</em></span>
+                        <span><i></i>Calendar<em>Connected</em></span>
+                        <span><i></i>Notion<em>Connected</em></span>
+                        <span><i></i>Slack<em>Connected</em></span>
+                        <span><i class="off"></i>Discord<em>Not set up</em></span>
+                      </div>
+                    </div>
+                  </aside>
+                  <div class="mbs-app-main">
+                    <div class="mbs-app-head"><strong>All <em>captures</em></strong><small>24 captures · 6 today</small></div>
+                    <div class="mbs-app-row is-on">
+                      <div class="mbs-app-meta"><time>2m ago</time><i></i>Personal</div>
+                      <div class="mbs-app-text">call mom tomorrow at 5pm</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">R</span><span class="mbs-app-when">Tomorrow · 5:00 PM</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>18m ago</time><i></i>Work</div>
+                      <div class="mbs-app-text">Q3 roadmap review with design — Thursday 2pm</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">C</span><span class="mbs-app-when">Thu · 2:00 PM</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>41m ago</time><i></i>Work</div>
+                      <div class="mbs-app-text">tell #eng the deploy moved to Friday</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">S</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>1h ago</time><i></i>Idea<span class="mbs-app-flag">Review</span></div>
+                      <div class="mbs-app-text">weekly digest email of everything I saved</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">N</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>3h ago</time><i></i>Work</div>
+                      <div class="mbs-app-text">send Sarah the final deck</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">T</span><span class="mbs-app-chip">S</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>5h ago</time><i></i>Personal</div>
+                      <div class="mbs-app-text">renew passport before March</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">R</span><span class="mbs-app-when">Mar 1 · 9:00 AM</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>Yesterday</time><i></i>Work</div>
+                      <div class="mbs-app-text">book flights for the offsite</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">T</span></div>
+                    </div>
+                    <div class="mbs-app-row">
+                      <div class="mbs-app-meta"><time>Yesterday</time><i></i>Idea</div>
+                      <div class="mbs-app-text">pricing feels like the real blocker</div>
+                      <div class="mbs-app-foot"><span class="mbs-app-chip">N</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mbs-base" aria-hidden="true">
+          <div class="mbs-bar-wrap"><div class="mbs-bar"></div></div>
+          <div class="mbs-deck">
+            <div class="mbs-speaker-col"><div class="mbs-speaker"></div></div>
+            <div class="mbs-keypad-col"><div class="mbs-keypad" data-mbs-keypad></div></div>
+            <div class="mbs-speaker-col"><div class="mbs-speaker"></div></div>
+          </div>
+          <div class="mbs-trackpad"></div>
+          <div class="mbs-lip"></div>
+          <div class="mbs-badge">
+            <span class="mbs-badge-mark"><svg viewBox="0 0 60 60" fill="currentColor"><path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z"/><path d="M16 27 L44 27 L34 46 L26 46 Z"/><rect x="24" y="45" width="12" height="9" rx="2"/></svg></span>
+          </div>
+        </div>
+        </div>
+      </section>
+
       <!-- How it works -->
       <section class="how-flow" id="how" aria-label="How Chute works">
         <article class="how-step" data-reveal>
@@ -227,15 +340,11 @@
         </p>
       </section>
 
-      <!-- The summon moment — the keys press themselves, the bar drops -->
+      <!-- The summon moment — the keyboard presses ⌘ ⇧ Space, the bar drops -->
       <section class="section-summon" id="summon" aria-labelledby="summon-title" data-summon-band>
         <div class="summon-band-inner">
           <div class="summon-band-stage" aria-hidden="true">
-            <div class="summon-band-keys">
-              <kbd class="skey skey-1">⌘</kbd>
-              <kbd class="skey skey-2">⇧</kbd>
-              <kbd class="skey skey-3">Space</kbd>
-            </div>
+            <div class="lkb" data-summon-keyboard></div>
             <div class="summon-band-bar">
               <img src="/chute-sphere.svg" alt="" width="15" height="15" />
               <span class="summon-band-text">remind me to stretch at 6</span>

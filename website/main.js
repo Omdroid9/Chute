@@ -6,18 +6,6 @@ injectLogos();
 const prefersReduced =
   window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ---------- Scroll progress bar ---------- */
-const progress = document.querySelector(".scroll-progress");
-if (progress) {
-  const updateProgress = () => {
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    const ratio = max > 0 ? window.scrollY / max : 0;
-    progress.style.transform = `scaleX(${ratio})`;
-  };
-  updateProgress();
-  window.addEventListener("scroll", updateProgress, { passive: true });
-}
-
 /* ---------- Back to top ---------- */
 const backToTop = document.querySelector("[data-back-to-top]");
 if (backToTop) {
@@ -1090,19 +1078,369 @@ if (macTime) {
 }
 
 
-/* ---------- Summon band: keys press themselves when scrolled into view ---------- */
+/* ---------- Tabler icons used by both keyboards (MIT, tabler.io/icons) ---------- */
+const ICON = {
+  brightnessDown: '<path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M12 5l0 .01"/><path d="M17 7l0 .01"/><path d="M19 12l0 .01"/><path d="M17 17l0 .01"/><path d="M12 19l0 .01"/><path d="M7 17l0 .01"/><path d="M5 12l0 .01"/><path d="M7 7l0 .01"/>',
+  brightnessUp: '<path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M12 5l0 -2"/><path d="M17 7l1.4 -1.4"/><path d="M19 12l2 0"/><path d="M17 17l1.4 1.4"/><path d="M12 19l0 2"/><path d="M7 17l-1.4 1.4"/><path d="M6 12l-2 0"/><path d="M7 7l-1.4 -1.4"/>',
+  table: '<path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z"/><path d="M3 10h18"/><path d="M10 3v18"/>',
+  search: '<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>',
+  microphone: '<path d="M9 2m0 3a3 3 0 0 1 3 -3h0a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3h0a3 3 0 0 1 -3 -3z"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M8 21l8 0"/><path d="M12 17l0 4"/>',
+  moon: '<path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/>',
+  trackPrev: '<path d="M21 5v14l-8 -7z"/><path d="M10 5v14l-8 -7z"/>',
+  skipForward: '<path d="M4 5v14l12 -7z"/><path d="M20 5l0 14"/>',
+  trackNext: '<path d="M3 5v14l8 -7z"/><path d="M14 5v14l8 -7z"/>',
+  volume3: '<path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5"/><path d="M16 10l4 4m0 -4l-4 4"/>',
+  volume2: '<path d="M15 8a5 5 0 0 1 0 8"/><path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5"/>',
+  volume: '<path d="M15 8a5 5 0 0 1 0 8"/><path d="M17.7 5a9 9 0 0 1 0 14"/><path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5"/>',
+  world: '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/>',
+  chevronUp: '<path d="M6 15l6 -6l6 6"/>',
+  command: '<path d="M7 9a2 2 0 1 1 2 -2v10a2 2 0 1 1 -2 -2h10a2 2 0 1 1 -2 2v-10a2 2 0 1 1 2 2h-10"/>',
+  caretUp: '<path fill="currentColor" stroke-width="0" d="M11.293 7.293a1 1 0 0 1 1.32 -.083l.094 .083l6 6l.083 .094l.054 .077l.054 .096l.017 .036l.027 .067l.032 .108l.01 .053l.01 .06l.004 .057l.002 .059l-.002 .059l-.005 .058l-.009 .06l-.01 .052l-.032 .108l-.027 .067l-.07 .132l-.065 .09l-.073 .081l-.094 .083l-.077 .054l-.096 .054l-.036 .017l-.067 .027l-.108 .032l-.053 .01l-.06 .01l-.057 .004l-.059 .002h-12c-.852 0 -1.297 -.986 -.783 -1.623l.076 -.084l6 -6z"/>',
+  caretLeft: '<path fill="currentColor" stroke-width="0" d="M13.883 5.007l.058 -.005h.118l.058 .005l.06 .009l.052 .01l.108 .032l.067 .027l.132 .07l.09 .065l.081 .073l.083 .094l.054 .077l.054 .096l.017 .036l.027 .067l.032 .108l.01 .053l.01 .06l.004 .057l.002 .059v12c0 .852 -.986 1.297 -1.623 .783l-.084 -.076l-6 -6a1 1 0 0 1 -.083 -1.32l.083 -.094l6 -6l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01z"/>',
+  caretDown: '<path fill="currentColor" stroke-width="0" d="M18 9c.852 0 1.297 .986 .783 1.623l-.076 .084l-6 6a1 1 0 0 1 -1.32 .083l-.094 -.083l-6 -6l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057v-.118l.005 -.058l.009 -.06l.01 -.052l.032 -.108l.027 -.067l.07 -.132l.065 -.09l.073 -.081l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01l.057 -.004l12.059 -.002z"/>',
+  caretRight: '<path fill="currentColor" stroke-width="0" d="M9 6c0 -.852 .986 -1.297 1.623 -.783l.084 .076l6 6a1 1 0 0 1 .083 1.32l-.083 .094l-6 6l-.094 .083l-.077 .054l-.096 .054l-.036 .017l-.067 .027l-.108 .032l-.053 .01l-.06 .01l-.057 .004l-.059 .002l-.059 -.002l-.058 -.005l-.06 -.009l-.052 -.01l-.108 -.032l-.067 -.027l-.132 -.07l-.09 -.065l-.081 -.073l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057l-.002 -12.059z"/>',
+};
+const icon = (name) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
+const OPTION =
+  '<svg viewBox="0 0 32 32" fill="none"><rect stroke="currentColor" stroke-width="2" x="18" y="5" width="10" height="2"/><polygon stroke="currentColor" stroke-width="2" points="10.6,5 4,5 4,7 9.4,7 18.4,27 28,27 28,25 19.6,25"/></svg>';
+
+/* ---------- Summon band: the keyboard presses ⌘ ⇧ Space, then the bar drops ---------- */
+// Keyboard = vanilla port of Aceternity UI "Keyboard": same layout and legends; keys press on
+// real keystrokes (and mouse) while it's on screen, and a demo presses the Chute hotkey.
 const summonBand = document.querySelector("[data-summon-band]");
-if (summonBand) {
-  const bandObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          summonBand.classList.add("in-view");
-          bandObserver.disconnect();
+const summonKeyboard = summonBand?.querySelector("[data-summon-keyboard]");
+if (summonBand && summonKeyboard) {
+  const key = (code, face, { cls = "", faceCls = "", wrap = "" } = {}) =>
+    `<div class="lkb-wrap ${wrap}"><button type="button" tabindex="-1" class="lkb-key ${cls}"${code ? ` data-code="${code}"` : ""}><div class="lkb-face ${faceCls}">${face}</div></button></div>`;
+  const one = (letter) => key(`Key${letter}`, letter);
+  const pair = (code, top, bottom) => key(code, `<span>${top}</span><span>${bottom}</span>`);
+  const fkey = (n, name) => key(`F${n}`, `${icon(name)}<span class="lkb-mt">F${n}</span>`);
+  const mod = (code, top, bottom, cls = "", wrap = "") =>
+    key(code, top + bottom, { cls: `${cls} ${wrap}`, faceCls: "is-mod", wrap });
+  const row = (...keys) => `<div class="lkb-row">${keys.join("")}</div>`;
+  const FN_ICONS = ["brightnessDown", "brightnessUp", "table", "search", "microphone", "moon",
+    "trackPrev", "skipForward", "trackNext", "volume3", "volume2", "volume"];
+
+  summonKeyboard.innerHTML = `<div class="lkb-pad">${[
+    row(
+      key("Escape", "<span>esc</span>", { cls: "w-10 tl", faceCls: "is-l", wrap: "tl" }),
+      ...FN_ICONS.map((name, i) => fkey(i + 1, name)),
+      key("", '<span class="lkb-power"><span></span></span>', { cls: "tr", wrap: "tr" }),
+    ),
+    row(
+      pair("Backquote", "~", "`"),
+      ...["!1", "@2", "#3", "$4", "%5", "^6", "&amp;7", "*8", "(9", ")0"].map((p, i) =>
+        pair(`Digit${(i + 1) % 10}`, p.slice(0, -1), p.slice(-1)),
+      ),
+      pair("Minus", "&mdash;", "_"),
+      pair("Equal", "+", "="),
+      key("Backspace", "<span>delete</span>", { cls: "w-10", faceCls: "is-r" }),
+    ),
+    row(
+      key("Tab", "<span>tab</span>", { cls: "w-10", faceCls: "is-l" }),
+      ..."QWERTYUIOP".split("").map(one),
+      pair("BracketLeft", "{", "["),
+      pair("BracketRight", "}", "]"),
+      pair("Backslash", "|", "\\"),
+    ),
+    row(
+      key("CapsLock", "<span>caps lock</span>", { cls: "w-caps", faceCls: "is-l" }),
+      ..."ASDFGHJKL".split("").map(one),
+      pair("Semicolon", ":", ";"),
+      pair("Quote", "&quot;", "'"),
+      key("Enter", "<span>return</span>", { cls: "w-ret", faceCls: "is-r" }),
+    ),
+    row(
+      key("ShiftLeft", "<span>shift</span>", { cls: "w-shift", faceCls: "is-l" }),
+      ..."ZXCVBNM".split("").map(one),
+      pair("Comma", "&lt;", ","),
+      pair("Period", "&gt;", "."),
+      pair("Slash", "?", "/"),
+      key("ShiftRight", "<span>shift</span>", { cls: "w-shift", faceCls: "is-r" }),
+    ),
+    row(
+      mod("Fn", "<span>fn</span>", icon("world"), "", "bl"),
+      mod("ControlLeft", icon("chevronUp"), "<span>control</span>"),
+      mod("AltLeft", OPTION, "<span>option</span>"),
+      mod("MetaLeft", icon("command"), "<span>command</span>", "w-8"),
+      key("Space", "", { cls: "w-space" }),
+      mod("MetaRight", icon("command"), "<span>command</span>", "w-8"),
+      mod("AltRight", OPTION, "<span>option</span>"),
+      `<div class="lkb-arrows">${key("ArrowLeft", icon("caretLeft"))}<div class="lkb-arrows-col">${key("ArrowUp", icon("caretUp"), { cls: "h-3" })}${key("ArrowDown", icon("caretDown"), { cls: "h-3" })}</div>${key("ArrowRight", icon("caretRight"), { cls: "br", wrap: "br" })}</div>`,
+    ),
+  ].join("")}</div>`;
+
+  // A key is down if the demo or the person is holding it
+  const keyEls = new Map(
+    [...summonKeyboard.querySelectorAll("[data-code]")].map((el) => [el.dataset.code, el]),
+  );
+  const demoDown = new Set();
+  const realDown = new Set();
+  const paint = (code) =>
+    keyEls.get(code)?.classList.toggle("is-pressed", demoDown.has(code) || realDown.has(code));
+
+  // Real keyboard + mouse, only while the keyboard is on screen (like the original)
+  let onScreen = false;
+  document.addEventListener("keydown", (e) => {
+    if (!onScreen || e.repeat) return;
+    realDown.add(e.code);
+    paint(e.code);
+  });
+  document.addEventListener("keyup", (e) => {
+    realDown.delete(e.code);
+    paint(e.code);
+  });
+  // ⌘-chords swallow their keyups on macOS; never leave a key stuck down
+  window.addEventListener("blur", () => {
+    for (const code of [...realDown]) {
+      realDown.delete(code);
+      paint(code);
+    }
+  });
+  summonKeyboard.addEventListener("mousedown", (e) => {
+    const code = e.target.closest("[data-code]")?.dataset.code;
+    if (!code) return;
+    realDown.add(code);
+    paint(code);
+    const up = () => {
+      realDown.delete(code);
+      paint(code);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mouseup", up);
+  });
+
+  // Demo: ⌘ → ⇧ → Space, timed with the bar's drop in CSS (bar at 0.95s, reason at 1.3s)
+  const HOTKEY = [
+    ["MetaLeft", 150],
+    ["ShiftLeft", 300],
+    ["Space", 450],
+  ];
+  const RELEASE_AT = 820;
+  const REPLAY_EVERY = 6500;
+  let timers = [];
+  let loop = null;
+  const playDemo = () => {
+    timers.forEach(clearTimeout);
+    summonBand.classList.remove("in-view");
+    void summonBand.offsetWidth; // restart the bar's CSS animations
+    summonBand.classList.add("in-view");
+    timers = HOTKEY.map(([code, at]) =>
+      setTimeout(() => {
+        demoDown.add(code);
+        paint(code);
+      }, at),
+    );
+    timers.push(
+      setTimeout(() => {
+        for (const [code] of HOTKEY) {
+          demoDown.delete(code);
+          paint(code);
         }
+      }, RELEASE_AT),
+    );
+  };
+
+  const bandObserver = new IntersectionObserver(
+    ([entry]) => {
+      onScreen = entry.isIntersecting;
+      if (prefersReduced) {
+        if (onScreen) summonBand.classList.add("in-view");
+        return;
+      }
+      if (entry.intersectionRatio >= 0.45 && !loop) {
+        playDemo();
+        loop = setInterval(playDemo, REPLAY_EVERY);
+      } else if (!onScreen && loop) {
+        clearInterval(loop);
+        loop = null;
       }
     },
-    { threshold: 0.45 },
+    { threshold: [0, 0.45] },
   );
   bandObserver.observe(summonBand);
+}
+
+/* ---------- MacBook scroll (vanilla port of Aceternity UI "MacBook Scroll") ---------- */
+const mbs = document.querySelector("[data-mbs]");
+if (mbs) {
+  // Keypad — same rows, key widths, legends and Tabler icons as the original <Keypad />
+  const key = (face, cap = "", faceCls = "") =>
+    `<div class="kb"><div class="kb-cap ${cap}"><div class="kb-face ${faceCls}">${face}</div></div></div>`;
+  const one = (ch) => key(`<span>${ch}</span>`);
+  const pair = (top, bottom) => key(`<span>${top}</span><span>${bottom}</span>`);
+  const fkey = (name, label) => key(`${icon(name)}<span class="kb-fn-label">${label}</span>`);
+  const mod = (top, bottom, cap = "", topSide = "r") =>
+    key(`<div class="kb-mod-${topSide}">${top}</div><div class="kb-mod-l">${bottom}</div>`, cap, "is-mod");
+  const row = (...keys) => `<div class="kb-row">${keys.join("")}</div>`;
+
+  mbs.querySelector("[data-mbs-keypad]").innerHTML = [
+    row(
+      key("esc", "w-10 is-l"),
+      fkey("brightnessDown", "F1"), fkey("brightnessUp", "F2"), fkey("table", "F3"),
+      fkey("search", "F4"), fkey("microphone", "F5"), fkey("moon", "F6"),
+      fkey("trackPrev", "F7"), fkey("skipForward", "F8"), fkey("trackNext", "F9"),
+      fkey("volume3", "F10"), fkey("volume2", "F11"), fkey("volume", "F12"),
+      key('<span class="kb-power"><span></span></span>'),
+    ),
+    row(
+      key('<span>~</span><span class="kb-fn-label">`</span>'),
+      pair("!", "1"), pair("@", "2"), pair("#", "3"), pair("$", "4"), pair("%", "5"),
+      pair("^", "6"), pair("&amp;", "7"), pair("*", "8"), pair("(", "9"), pair(")", "0"),
+      pair("&mdash;", "_"), pair("+", "="),
+      key("delete", "w-10 is-r"),
+    ),
+    row(
+      key("tab", "w-10 is-l"),
+      ..."QWERTYUIOP".split("").map(one),
+      pair("{", "["), pair("}", "]"), pair("|", "\\"),
+    ),
+    row(
+      key("caps lock", "w-caps is-l"),
+      ..."ASDFGHJKL".split("").map(one),
+      pair(":", ";"), pair("&quot;", "'"),
+      key("return", "w-ret is-r"),
+    ),
+    row(
+      key("shift", "w-shift is-l"),
+      ..."ZXCVBNM".split("").map(one),
+      pair("&lt;", ","), pair("&gt;", "."), pair("?", "/"),
+      key("shift", "w-shift is-r"),
+    ),
+    row(
+      mod("<span>fn</span>", icon("world")),
+      mod(icon("chevronUp"), "<span>control</span>"),
+      mod(OPTION, "<span>option</span>"),
+      mod(icon("command"), "<span>command</span>", "w-8"),
+      key("", "w-space"),
+      mod(icon("command"), "<span>command</span>", "w-8", "l"),
+      mod(OPTION, "<span>option</span>", "", "l"),
+      `<div class="kb-arrows">${key(icon("caretUp"), "h-3")}<div class="kb-arrows-row">${key(icon("caretLeft"), "h-3")}${key(icon("caretDown"), "h-3")}${key(icon("caretRight"), "h-3")}</div></div>`,
+    ),
+  ].join("");
+
+  // Scroll: the original's useScroll({ offset: ["start start", "end start"] }) is progress 0
+  // when the section's top reaches the viewport top and 1 when its bottom does (the CSS
+  // "exit-crossing" range), with its clamped useTransform ranges:
+  //   scaleX [0, .3] → [1.2, end], scaleY [0, .3] → [0.6, end], rotateX [.1, .12, .3] →
+  //   [-28, -28, 0], translateY [0, 1] → [0, travel], title translateY [0, .3] → [0, 100px].
+  // It runs as a scroll-driven animation (ViewTimeline) so the compositor moves the screen in
+  // step with the scroll. Updating it from scroll events made it trail the page and judder.
+  const device = mbs.querySelector("[data-mbs-device]");
+  const screen = mbs.querySelector("[data-mbs-screen]");
+  const title = mbs.querySelector("[data-mbs-title]");
+  const map = (p, input, output) => {
+    if (p <= input[0]) return output[0];
+    for (let i = 1; i < input.length; i++) {
+      if (p <= input[i]) {
+        const t = (p - input[i - 1]) / (input[i] - input[i - 1]);
+        return output[i - 1] + (output[i] - output[i - 1]) * t;
+      }
+    }
+    return output[output.length - 1];
+  };
+  const docTop = (el) => {
+    let y = 0;
+    for (let n = el; n; n = n.offsetParent) y += n.offsetTop;
+    return y;
+  };
+  const STOPS = [0, 0.1, 0.12, 0.3, 1]; // every bend in the ranges above, so linear tweening is exact
+  const NAV_CLEAR = 88; // keep the resting screen below the floating nav pill
+  const titleAt = (p) => `translateY(${map(p, [0, 0.3], [0, 100])}px)`;
+
+  let timeline = null;
+  if (!prefersReduced && typeof window.ViewTimeline === "function") {
+    try {
+      timeline = new ViewTimeline({ subject: mbs, axis: "block" });
+    } catch {
+      timeline = null;
+    }
+  }
+  let anims = [];
+  let screenAt = null;
+  let top = 0;
+  let height = 1;
+
+  const build = () => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const mobile = vw < 768;
+    const end = mobile ? 1 : 1.5; // the original's end scale
+    const widest = 512 * Math.max(1.2, end); // 1.2× at the start, `end`× once flat
+    const endH = 384 * end;
+    top = docTop(mbs);
+    height = mbs.offsetHeight || 1;
+    const deviceTop = docTop(device) - top; // layout position; the scale's origin is its top
+
+    // As large as fits: across the viewport with gutters, and short enough that the flat
+    // screen is fully visible (below the nav) once it comes to rest.
+    const byWidth = (vw - (mobile ? 32 : 64)) / widest;
+    const byHeight = (vh - NAV_CLEAR - 24) / endH;
+    const s = Math.max(0.4, Math.min(1.3, byWidth, byHeight));
+    mbs.style.setProperty("--mbs-s", s.toFixed(4));
+
+    if (prefersReduced) {
+      // Static start state: just keep the scaled machine clear of the next section.
+      mbs.style.marginBottom = `${Math.max(0, Math.ceil(device.offsetHeight * (s - 1))) + 48}px`;
+      return;
+    }
+
+    // Travel so the screen comes to rest centred in the viewport (clear of the nav) at p = 1,
+    // and reserve room below the section so it rests over empty space, not the next section.
+    const restTop = Math.max(NAV_CLEAR, (vh - endH * s) / 2);
+    const travel = (restTop - deviceTop + height) / s; // in the scaled device's own px
+    mbs.style.marginBottom = `${Math.ceil(restTop + endH * s + 48)}px`;
+    screenAt = (p) =>
+      `translateY(${map(p, [0, 1], [0, travel])}px) scaleX(${map(p, [0, 0.3], [1.2, end])}) ` +
+      `scaleY(${map(p, [0, 0.3], [0.6, end])}) rotateX(${map(p, [0.1, 0.12, 0.3], [-28, -28, 0])}deg)`;
+
+    for (const a of anims) a.cancel();
+    anims = [];
+    if (timeline) {
+      try {
+        const opts = {
+          timeline,
+          rangeStart: "exit-crossing 0%",
+          rangeEnd: "exit-crossing 100%",
+          fill: "both",
+        };
+        anims = [
+          screen.animate(STOPS.map((o) => ({ offset: o, transform: screenAt(o) })), opts),
+          title.animate(STOPS.map((o) => ({ offset: o, transform: titleAt(o) })), opts),
+        ];
+        return;
+      } catch {
+        timeline = null; // fall through to the scroll-event fallback
+      }
+    }
+    render();
+  };
+
+  // Fallback for browsers without scroll-driven animations
+  const render = () => {
+    if (timeline || !screenAt) return;
+    const p = Math.min(Math.max((window.scrollY - top) / height, 0), 1);
+    screen.style.transform = screenAt(p);
+    title.style.transform = titleAt(p);
+  };
+
+  build();
+  window.addEventListener("resize", build, { passive: true });
+  window.addEventListener("load", build);
+  document.fonts?.ready.then(build);
+  if (!prefersReduced) {
+    let raf = null;
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (timeline || raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = null;
+          render();
+        });
+      },
+      { passive: true },
+    );
+  }
 }
