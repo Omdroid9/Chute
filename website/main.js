@@ -82,7 +82,7 @@ const TYPE_PHRASES = [
   { text: "Call design team tomorrow at 3pm about launch assets", time: "Tomorrow · 3:00 PM" },
   { text: "Ship beta build to testers Friday 5pm",                time: "Friday · 5:00 PM" },
   { text: "Idea: keyboard shortcut for quick tag swap",            time: null },
-  { text: "Standup notes — orb polish, onboarding fix",            time: "Tomorrow · 9:30 AM" },
+  { text: "Standup notes: orb polish, onboarding fix",            time: "Tomorrow · 9:30 AM" },
   { text: "Email Sarah about Q3 roadmap next Monday 10am",         time: "Mon · 10:00 AM" },
 ];
 
@@ -593,7 +593,7 @@ if (ctaForm) {
     } else if (EMAIL_OK.test(value)) {
       setReason(`Looks like an email → beta list · Enter sends`, null);
     } else {
-      setReason("Keep typing — that's not a full email yet", null);
+      setReason("Keep typing, that's not a full email yet", null);
     }
   });
 
@@ -610,18 +610,18 @@ if (ctaForm) {
     // collect OS/use-case in the reply. The typed email is captured in case
     // they send from a different account than they want us to reach.
     try {
-      const sub = encodeURIComponent("Chute beta — count me in");
+      const sub = encodeURIComponent("Chute beta: count me in");
       const body = encodeURIComponent(
         `Hi Omkar,\n\n` +
           `I'd love early access to Chute. You can reach me at ${email}.\n\n` +
           `Sent from usechute.com`,
       );
       window.location.href = `mailto:hello@usechute.com?subject=${sub}&body=${body}`;
-      setReason("Your mail app just opened — hit send there and you're in", "sent");
+      setReason("Your mail app just opened. Hit send there and you're in", "sent");
       if (sendBtn) sendBtn.disabled = true;
       input.disabled = true;
     } catch {
-      setReason("Could not open your mail app — write to hello@usechute.com", "error");
+      setReason("Could not open your mail app. Write to hello@usechute.com", "error");
     }
   });
 }
@@ -1133,7 +1133,7 @@ if (summonBand && summonKeyboard) {
       ...["!1", "@2", "#3", "$4", "%5", "^6", "&amp;7", "*8", "(9", ")0"].map((p, i) =>
         pair(`Digit${(i + 1) % 10}`, p.slice(0, -1), p.slice(-1)),
       ),
-      pair("Minus", "&mdash;", "_"),
+      pair("Minus", "_", "-"),
       pair("Equal", "+", "="),
       key("Backspace", "<span>delete</span>", { cls: "w-10", faceCls: "is-r" }),
     ),
@@ -1288,7 +1288,7 @@ if (mbs) {
       key('<span>~</span><span class="kb-fn-label">`</span>'),
       pair("!", "1"), pair("@", "2"), pair("#", "3"), pair("$", "4"), pair("%", "5"),
       pair("^", "6"), pair("&amp;", "7"), pair("*", "8"), pair("(", "9"), pair(")", "0"),
-      pair("&mdash;", "_"), pair("+", "="),
+      pair("_", "-"), pair("+", "="),
       key("delete", "w-10 is-r"),
     ),
     row(
