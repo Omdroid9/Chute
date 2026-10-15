@@ -5264,6 +5264,13 @@ main h2 .accent-serif {
   align-items: center;
   transform: scale(var(--mbs-s));
   transform-origin: 50% 0;
+  /* Make its layout height match the scaled height (lid 12rem + base 22rem), so a smaller
+     machine doesn't leave a blank band under it and a larger one doesn't overlap below. */
+  margin-bottom: calc(34rem * (var(--mbs-s) - 1));
+}
+/* Phones: no 200vh hover. The scene plays while the laptop passes through the viewport. */
+@media (max-width: 767px) {
+  .mbs { min-height: 0; padding-bottom: 5rem; }
 }
 
 /* ---------- Lid ---------- */

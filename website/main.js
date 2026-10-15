@@ -1358,59 +1358,92 @@ if (mbs) {
     }
   }
   let anims = [];
-  let screenAt = null;
-  let top = 0;
-  let height = 1;
+  let frames = null; // what the scroll-event fallback needs: { progress, screenAt, titleAt }
+  let lastWidth = 0;
+  const DEVICE_H = 544; // lid (12rem) + base (22rem), before scaling
+  const clamp01 = (n) => Math.min(Math.max(n, 0), 1);
 
   const build = () => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const mobile = vw < 768;
-    const end = mobile ? 1 : 1.5; // the original's end scale
+    lastWidth = vw;
+    // Desktop ends at the original's 1.5×. On phones the screen ends as wide as it starts
+    // (1.2×, the full column) rather than shrinking back to the original's 1×.
+    const end = mobile ? 1.2 : 1.5;
     const widest = 512 * Math.max(1.2, end); // 1.2× at the start, `end`× once flat
     const endH = 384 * end;
-    top = docTop(mbs);
-    height = mbs.offsetHeight || 1;
-    const deviceTop = docTop(device) - top; // layout position; the scale's origin is its top
+    const sectionTop = docTop(mbs);
+    const height = mbs.offsetHeight || 1;
+    const deviceTop = docTop(device) - sectionTop; // layout position; the scale's origin is its top
 
     // As large as fits: across the viewport with gutters, and short enough that the flat
-    // screen is fully visible (below the nav) once it comes to rest.
+    // screen is fully visible (below the nav).
     const byWidth = (vw - (mobile ? 32 : 64)) / widest;
     const byHeight = (vh - NAV_CLEAR - 24) / endH;
     const s = Math.max(0.4, Math.min(1.3, byWidth, byHeight));
     mbs.style.setProperty("--mbs-s", s.toFixed(4));
 
-    if (prefersReduced) {
-      // Static start state: just keep the scaled machine clear of the next section.
-      mbs.style.marginBottom = `${Math.max(0, Math.ceil(device.offsetHeight * (s - 1))) + 48}px`;
-      return;
-    }
-
-    // Travel so the screen comes to rest centred in the viewport (clear of the nav) at p = 1,
-    // and reserve room below the section so it rests over empty space, not the next section.
-    const restTop = Math.max(NAV_CLEAR, (vh - endH * s) / 2);
-    const travel = (restTop - deviceTop + height) / s; // in the scaled device's own px
-    mbs.style.marginBottom = `${Math.ceil(restTop + endH * s + 48)}px`;
-    screenAt = (p) =>
-      `translateY(${map(p, [0, 1], [0, travel])}px) scaleX(${map(p, [0, 0.3], [1.2, end])}) ` +
-      `scaleY(${map(p, [0, 0.3], [0.6, end])}) rotateX(${map(p, [0.1, 0.12, 0.3], [-28, -28, 0])}deg)`;
-
     for (const a of anims) a.cancel();
     anims = [];
+    frames = null;
+    screen.style.transform = "";
+    title.style.transform = "";
+    mbs.style.marginBottom = "";
+    if (prefersReduced) return; // static start pose
+
+    let stops;
+    let range;
+    if (mobile) {
+      // Phones: the laptop stays in one piece. While it rises from the lower part of the
+      // viewport to just above the middle, the screen stays hinged at the top, tilts flat and
+      // unfolds over the keyboard to the full column width, leaving the bottom of the deck
+      // (trackpad edge, badge) showing. (The desktop hover left a small screen floating in a
+      // long empty scroll on a phone.)
+      const startD = 0.2 * vh + deviceTop; // laptop top at 80% of the viewport…
+      const endD = 0.55 * vh + deviceTop + (DEVICE_H * s) / 2; // …until its middle is at 45%
+      stops = [0, 0.4, 1];
+      range = { rangeStart: `cover ${startD}px`, rangeEnd: `cover ${endD}px` };
+      frames = {
+        // distance scrolled since the section's top entered at the bottom of the viewport
+        progress: () => clamp01((vh - (sectionTop - window.scrollY) - startD) / (endD - startD)),
+        screenAt: (q) =>
+          `translateY(0px) scaleX(${map(q, [0, 1], [1.2, end])}) ` +
+          `scaleY(${map(q, [0, 1], [0.6, end])}) rotateX(${map(q, [0, 0.4, 1], [-28, -28, 0])}deg)`,
+        titleAt: null,
+      };
+    } else {
+      // Travel so the screen comes to rest centred in the viewport (clear of the nav) at
+      // p = 1, and reserve room below the section so it rests over empty space.
+      const restTop = Math.max(NAV_CLEAR, (vh - endH * s) / 2);
+      const travel = (restTop - deviceTop + height) / s; // in the scaled device's own px
+      mbs.style.marginBottom = `${Math.ceil(restTop + endH * s + 48)}px`;
+      stops = STOPS;
+      range = { rangeStart: "exit-crossing 0%", rangeEnd: "exit-crossing 100%" };
+      frames = {
+        progress: () => clamp01((window.scrollY - sectionTop) / height),
+        screenAt: (p) =>
+          `translateY(${map(p, [0, 1], [0, travel])}px) scaleX(${map(p, [0, 0.3], [1.2, end])}) ` +
+          `scaleY(${map(p, [0, 0.3], [0.6, end])}) rotateX(${map(p, [0.1, 0.12, 0.3], [-28, -28, 0])}deg)`,
+        titleAt,
+      };
+    }
+
     if (timeline) {
       try {
-        const opts = {
-          timeline,
-          rangeStart: "exit-crossing 0%",
-          rangeEnd: "exit-crossing 100%",
-          fill: "both",
-        };
-        anims = [
-          screen.animate(STOPS.map((o) => ({ offset: o, transform: screenAt(o) })), opts),
-          title.animate(STOPS.map((o) => ({ offset: o, transform: titleAt(o) })), opts),
-        ];
+        const opts = { timeline, ...range, fill: "both" };
+        anims.push(
+          screen.animate(stops.map((o) => ({ offset: o, transform: frames.screenAt(o) })), opts),
+        );
+        if (frames.titleAt) {
+          anims.push(
+            title.animate(stops.map((o) => ({ offset: o, transform: frames.titleAt(o) })), opts),
+          );
+        }
         return;
       } catch {
+        for (const a of anims) a.cancel();
+        anims = [];
         timeline = null; // fall through to the scroll-event fallback
       }
     }
@@ -1419,14 +1452,23 @@ if (mbs) {
 
   // Fallback for browsers without scroll-driven animations
   const render = () => {
-    if (timeline || !screenAt) return;
-    const p = Math.min(Math.max((window.scrollY - top) / height, 0), 1);
-    screen.style.transform = screenAt(p);
-    title.style.transform = titleAt(p);
+    if (timeline || !frames) return;
+    const p = frames.progress();
+    screen.style.transform = frames.screenAt(p);
+    if (frames.titleAt) title.style.transform = frames.titleAt(p);
   };
 
   build();
-  window.addEventListener("resize", build, { passive: true });
+  window.addEventListener(
+    "resize",
+    () => {
+      // Phone toolbars resize the viewport's height while scrolling; only a width change
+      // (rotation, desktop window resize) needs a rebuild there.
+      if (window.innerWidth === lastWidth && lastWidth < 768) return;
+      build();
+    },
+    { passive: true },
+  );
   window.addEventListener("load", build);
   document.fonts?.ready.then(build);
   if (!prefersReduced) {
