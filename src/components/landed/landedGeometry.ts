@@ -37,8 +37,6 @@ export const PANEL_WIDTH = 460;
 export const CONF_DROP = 30;
 export const TAB = { width: 46, height: 14 };
 export const TAB_NEAR = { width: 64, height: 18 };
-/** Extra tab width for the amber dot. */
-export const TAB_DOT = 12;
 export const PILL = { width: 250, height: 30 };
 export const CONF_PILL = { width: 270, height: 30 };
 export const TIP_WIDTH = 260;
@@ -68,7 +66,8 @@ export function shapeFor({ stage, geometry, near, attention, panelHeight }: Shap
       }
       {
         const size = near ? TAB_NEAR : TAB;
-        return centred(geometry, size.width + (attention ? TAB_DOT : 0), size.height);
+        // The amber dot is a badge on the mark, so the tab never shifts.
+        return centred(geometry, size.width, size.height);
       }
   }
 }

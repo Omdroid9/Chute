@@ -627,11 +627,19 @@ export default function LandedWindow() {
       <div className="landed-shape" style={shapeStyle}>
         <div className="landed-clip">
           {geometry.hasNotch ? (
-            <span className="landed-attention-dot" aria-hidden />
+            // Balanced ears: Chute's mark on the left, the amber dot on the right.
+            <>
+              <span className="landed-attention-mark" aria-hidden>
+                <ChuteMark size={10} />
+              </span>
+              <span className="landed-attention-dot" aria-hidden />
+            </>
           ) : (
             <div className="landed-tab">
-              <ChuteMark size={near ? 13 : 11} />
-              {attention && <span className="landed-dot is-failed" />}
+              <span className="landed-tab-mark">
+                <ChuteMark size={near ? 13 : 11} />
+                {attention && <span className="landed-tab-badge" aria-hidden />}
+              </span>
             </div>
           )}
 

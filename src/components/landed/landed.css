@@ -88,7 +88,18 @@ html[data-window="landed"] body {
   transition: opacity 160ms ease;
 }
 
-.landed[data-stage="idle"][data-attention] .landed-attention-dot {
+.landed-attention-mark {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  display: flex;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.landed[data-stage="idle"][data-attention] .landed-attention-dot,
+.landed[data-stage="idle"][data-attention] .landed-attention-mark {
   opacity: 1;
 }
 
@@ -128,6 +139,23 @@ html[data-window="landed"] body {
 
 .landed:not([data-stage="idle"]) .landed-tab {
   opacity: 0;
+}
+
+/* The mark sits dead centre; "needs you" is a badge on its corner. */
+.landed-tab-mark {
+  position: relative;
+  display: flex;
+}
+
+.landed-tab-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--landed-amber);
+  box-shadow: 0 0 0 1.5px #000;
 }
 
 .landed-dot {
