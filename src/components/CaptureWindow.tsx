@@ -67,6 +67,7 @@ import type {
   RoutingRule,
   RoutingRuleField,
 } from "../types";
+import { isStoredToday } from "../lib/timestamps";
 
 const MAX_CHARS = 2000;
 const CHAR_COUNTER_THRESHOLD = 100;
@@ -325,12 +326,6 @@ function toAddCandidate(capture: Capture, config: SyncConfig): AddCandidate {
     title: capture.content.split("\n")[0]?.trim() || capture.content.trim(),
     where: ready.length > 0 ? describeDestinations(ready) : "Chute",
   };
-}
-
-/** `created_at` is stored as UTC ("2026-10-19 20:00:00"). */
-function isFromToday(createdAt: string): boolean {
-  const created = new Date(`${createdAt.replace(" ", "T")}Z`);
-  return !Number.isNaN(created.getTime()) && created.toDateString() === new Date().toDateString();
 }
 
 export default function CaptureWindow() {
@@ -1549,7 +1544,7 @@ export default function CaptureWindow() {
   const addMode = addTarget !== null;
   const addCandidate = addTarget ? addTarget.candidates[addTarget.index] : null;
   // Discoverability for "Add to": the newest capture from today, if any.
-  const addHint = recentCaptures.find((capture) => isFromToday(capture.created_at)) ?? null;
+  const addHint = recentCaptures.find((capture) => isStoredToday(capture.created_at)) ?? null;
   const showHints = totalCaptures !== null && totalCaptures < HINT_GRADUATION_CAPTURES;
 
   // Spotlight-scale when idle, expanded once typing reveals the controls.

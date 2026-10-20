@@ -1,5 +1,5 @@
 import type { Capture } from "../../types";
-import { DESTINATIONS, destinationLabel, syncStatusFor } from "./libraryShared";
+import { DESTINATIONS, destinationCode, destinationLabel, syncStatusFor } from "./libraryShared";
 
 export default function DestinationChips({
   capture,
@@ -26,7 +26,7 @@ export default function DestinationChips({
           data-compact={compact ? "true" : undefined}
           title={`${destinationLabel(dest)} · ${status}`}
         >
-          {destinationLabel(dest).charAt(0)}
+          {destinationCode(dest)}
         </span>
       ))}
     </span>

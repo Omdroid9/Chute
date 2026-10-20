@@ -15,6 +15,8 @@ import { parseReminderSyntax } from "../lib/parser";
 import { recurrenceLabelFromRule } from "../lib/recurrence";
 import { useAppStore } from "../store/useAppStore";
 import type { Capture, CaptureDestinations, CaptureLane, CaptureTag } from "../types";
+import { parseStoredTimestamp } from "../lib/timestamps";
+import SyncErrorNotice from "./SyncErrorNotice";
 
 const TAG_OPTIONS: CaptureTag[] = ["untagged", "work", "personal", "idea"];
 const DEFAULT_LIST = "Inbox";
@@ -706,10 +708,10 @@ export default function CaptureList({ onBack }: CaptureListProps) {
                         </button>
                       ) : null}
                       <time
-                        dateTime={new Date(capture.created_at).toISOString()}
+                        dateTime={parseStoredTimestamp(capture.created_at).toISOString()}
                         className="text-[11px] codex-muted font-mono"
                       >
-                        {new Date(capture.created_at).toLocaleString()}
+                        {parseStoredTimestamp(capture.created_at).toLocaleString()}
                       </time>
                     </div>
                     <div className="mb-2 text-[11px] codex-muted">
@@ -732,8 +734,11 @@ export default function CaptureList({ onBack }: CaptureListProps) {
                       <div className="mb-2 text-[11px] text-red-200/80">Agent error: {capture.agent_error}</div>
                     ) : null}
                     {capture.last_sync_error ? (
-                      <div className="mb-2 rounded border border-red-400/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-500">
-                        Sync error: {capture.last_sync_error}
+                      <div className="mb-2 flex flex-col items-start gap-1 rounded border border-red-400/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-500">
+                        <SyncErrorNotice
+                          error={capture.last_sync_error}
+                          buttonClassName="codex-btn-soft rounded-md px-2 py-0.5 text-[11px] text-[var(--text)]"
+                        />
                       </div>
                     ) : null}
                     {capture.agent_needs_review === 1 ? (

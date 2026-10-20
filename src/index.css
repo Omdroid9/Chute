@@ -2350,8 +2350,10 @@ html[data-theme="dark"] .library-row-reminder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 19px;
+  box-sizing: border-box;
+  min-width: 19px;
   height: 19px;
+  padding: 0 3px;
   border-radius: 5px;
   border: 1px solid var(--border-strong);
   background: transparent;
@@ -2654,6 +2656,11 @@ html[data-theme="dark"] .library-error-card .label-micro {
   color: var(--text);
   font-family: var(--font-mono);
   word-break: break-word;
+}
+
+.library-error-message {
+  display: block;
+  font-family: var(--font-sans);
 }
 
 .library-agent-card {

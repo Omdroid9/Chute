@@ -21,22 +21,18 @@ import LibrarySidebar, {
 import LibraryCaptureList from "./LibraryCaptureList";
 import LibraryCaptureDetail from "./LibraryCaptureDetail";
 import LibraryTopBar from "./LibraryTopBar";
+import { isStoredToday, parseStoredTimestamp } from "../../lib/timestamps";
+import { isMacOS } from "../../lib/platform";
 
 function isWithinDay(iso: string, daysBack: number): boolean {
-  const ts = Date.parse(iso);
+  const ts = parseStoredTimestamp(iso).getTime();
   if (!Number.isFinite(ts)) return false;
   const cutoff = Date.now() - daysBack * 24 * 60 * 60_000;
   return ts >= cutoff;
 }
 
 function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const today = new Date();
-  return (
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate()
-  );
+  return isStoredToday(iso);
 }
 
 function hasFailedSync(capture: Capture): boolean {
@@ -230,7 +226,16 @@ export default function LibraryWindow() {
 
   const integrations = useMemo(() => {
     if (!settings) return [];
+    // Apple's apps need no setup on a Mac; they were missing from this list.
+    const apple = isMacOS()
+      ? [
+          { id: "reminders", label: "Reminders", connected: true },
+          { id: "apple_calendar", label: "Calendar", connected: true },
+          { id: "apple_notes", label: "Notes", connected: true },
+        ]
+      : [];
     return [
+      ...apple,
       { id: "slack", label: "Slack", connected: providerConfigured("slack", settings) },
       { id: "notion", label: "Notion", connected: providerConfigured("notion", settings) },
       { id: "google", label: "Google", connected: providerConfigured("google", settings) },

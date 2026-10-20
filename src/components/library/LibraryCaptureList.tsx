@@ -3,6 +3,7 @@ import type { Capture } from "../../types";
 import type { LibraryView } from "./LibrarySidebar";
 import DestinationChips from "./DestinationChips";
 import { formatRelative } from "./libraryShared";
+import { parseStoredTimestamp } from "../../lib/timestamps";
 
 interface Props {
   captures: Capture[];
@@ -108,7 +109,7 @@ export default function LibraryCaptureList({
                     <time
                       className="font-mono library-row-time"
                       dateTime={capture.created_at}
-                      title={new Date(capture.created_at).toLocaleString()}
+                      title={parseStoredTimestamp(capture.created_at).toLocaleString()}
                     >
                       {formatRelative(capture.created_at)}
                     </time>

@@ -2,11 +2,14 @@ import { useMemo, useState } from "react";
 import type { Capture } from "../../types";
 import {
   DESTINATIONS,
+  destinationCode,
   destinationLabel,
   formatRelative,
   parseAgentAction,
   syncStatusFor,
 } from "./libraryShared";
+import { parseStoredTimestamp } from "../../lib/timestamps";
+import SyncErrorNotice from "../SyncErrorNotice";
 
 interface Props {
   capture: Capture | null;
@@ -43,7 +46,7 @@ export default function LibraryCaptureDetail({
     );
   }
 
-  const created = new Date(capture.created_at);
+  const created = parseStoredTimestamp(capture.created_at);
   const isBusy = (key: string) => actionBusy === `${key}:${capture.id}`;
   const destinations = DESTINATIONS.map((dest) => ({
     dest,
@@ -100,7 +103,7 @@ export default function LibraryCaptureDetail({
             {destinations.map(({ dest, label, status }) => (
               <li key={dest} className="library-dest-detail-row">
                 <span className="library-dest-glyph" data-status={status}>
-                  {label.charAt(0)}
+                  {destinationCode(dest)}
                 </span>
                 <span className="library-dest-detail-label">{label}</span>
                 <span
@@ -122,7 +125,13 @@ export default function LibraryCaptureDetail({
             <span className="label-micro" data-tone="danger">
               Last error
             </span>
-            <p className="library-error-text">{capture.last_sync_error}</p>
+            <div className="library-error-text">
+              <SyncErrorNotice
+                error={capture.last_sync_error}
+                messageClassName="library-error-message"
+                buttonClassName="library-btn library-btn-soft mt-2 block"
+              />
+            </div>
           </div>
         ) : null}
       </section>

@@ -1,84 +1,53 @@
 import type { Capture } from "../../types";
+import { parseStoredTimestamp } from "../../lib/timestamps";
+import {
+  DESTINATION_LABELS,
+  SYNC_DESTINATIONS,
+  isSynced,
+  isTargeted,
+  type SyncDestination,
+} from "../../lib/sync/destinations";
 
-export type Destination =
-  | "slack"
-  | "notion"
-  | "googleCalendar"
-  | "googleTasks"
-  | "appleReminders"
-  | "discord";
+/**
+ * The Library shows every app a capture can go to (shared with the sync
+ * engine), so Apple Notes, Reminders and Calendar are told apart correctly.
+ */
+export type Destination = SyncDestination;
 
 export type SyncStatus = "synced" | "queued" | "failed" | "off";
 
-export const DESTINATIONS: Destination[] = [
-  "slack",
-  "notion",
-  "googleCalendar",
-  "googleTasks",
-  "appleReminders",
-  "discord",
-];
+export const DESTINATIONS: Destination[] = SYNC_DESTINATIONS;
 
 export function destinationLabel(dest: Destination): string {
-  switch (dest) {
-    case "slack":
-      return "Slack";
-    case "notion":
-      return "Notion";
-    case "googleCalendar":
-      return "Calendar";
-    case "googleTasks":
-      return "Tasks";
-    case "appleReminders":
-      return "Reminders";
-    case "discord":
-      return "Discord";
-  }
+  return DESTINATION_LABELS[dest];
 }
 
-function targeted(capture: Capture, dest: Destination): boolean {
-  switch (dest) {
-    case "slack":
-      return Boolean(capture.target_slack);
-    case "notion":
-      return Boolean(capture.target_notion);
-    case "googleCalendar":
-      return Boolean(capture.target_google_calendar);
-    case "googleTasks":
-      return Boolean(capture.target_google_tasks);
-    case "appleReminders":
-      return Boolean(capture.target_apple_reminders);
-    case "discord":
-      return Boolean(capture.target_discord);
-  }
-}
+// Distinct chip codes: Apple apps A·, Google apps G·, the rest one letter.
+const DESTINATION_CODES: Record<Destination, string> = {
+  reminders: "AR",
+  apple_calendar: "AC",
+  apple_notes: "AN",
+  google_calendar: "GC",
+  google_tasks: "GT",
+  notion: "N",
+  slack: "S",
+  discord: "D",
+};
 
-function synced(capture: Capture, dest: Destination): boolean {
-  switch (dest) {
-    case "slack":
-      return Boolean(capture.synced_slack);
-    case "notion":
-      return Boolean(capture.synced_notion);
-    case "googleCalendar":
-      return Boolean(capture.synced_google_calendar);
-    case "googleTasks":
-      return Boolean(capture.synced_google_tasks);
-    case "appleReminders":
-      return Boolean(capture.synced_apple_reminders);
-    case "discord":
-      return Boolean(capture.synced_discord);
-  }
+export function destinationCode(dest: Destination): string {
+  return DESTINATION_CODES[dest];
 }
 
 export function syncStatusFor(capture: Capture, dest: Destination): SyncStatus {
-  if (!targeted(capture, dest)) return "off";
-  if (synced(capture, dest)) return "synced";
+  if (!isTargeted(capture, dest)) return "off";
+  if (isSynced(capture, dest)) return "synced";
   if (capture.last_sync_error) return "failed";
   return "queued";
 }
 
+/** "Just now", "5m ago", … for a stored (UTC) timestamp. */
 export function formatRelative(iso: string): string {
-  const ts = Date.parse(iso);
+  const ts = parseStoredTimestamp(iso).getTime();
   if (!Number.isFinite(ts)) return iso;
   const deltaMs = Date.now() - ts;
   const minutes = Math.round(deltaMs / 60_000);
