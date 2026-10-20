@@ -23,6 +23,7 @@ import {
   type LandedStatus,
 } from "./landedRows";
 import { openTarget } from "./landedActions";
+import { parseStoredTimestamp } from "../../lib/timestamps";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -62,7 +63,8 @@ const REFRESH_MS = 60_000;
 /** A press can arrive both as a DOM event and from the poller; act once. */
 const PRESS_DEDUPE_MS = 350;
 const PRESS_DEDUPE_PX = 8;
-const MAX_ROWS = 6;
+/** Room kept below the open panel for its shadow. */
+const PANEL_SHADOW_ROOM = 24;
 
 function ParachuteIcon({ size }: { size: number }) {
   return (
@@ -149,6 +151,9 @@ export default function LandedWindow() {
   const [settingsOpened, setSettingsOpened] = useState<ReadonlySet<string>>(new Set());
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  // More rows below the fold (the panel scrolls once the day outgrows it).
+  const [moreBelow, setMoreBelow] = useState(false);
   const tipRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage>("idle");
   const pointerRef = useRef<Pointer | null>(null);
@@ -474,6 +479,20 @@ export default function LandedWindow() {
     if (stage === "peek" || stage === "open") void refresh();
   }, [stage, refresh]);
 
+  const updateListEdges = useCallback(() => {
+    const list = listRef.current;
+    setMoreBelow(Boolean(list && list.scrollHeight - list.clientHeight - list.scrollTop > 4));
+  }, []);
+
+  const onListScroll = useCallback(() => {
+    updateListEdges();
+    const pointer = pointerRef.current;
+    if (pointer?.inside && stageRef.current === "open") {
+      const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
+      setHoverId(row?.dataset.row ?? null);
+    }
+  }, [updateListEdges]);
+
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
   const counts = countLanded(rows);
   const attention = counts.failed > 0;
@@ -482,8 +501,9 @@ export default function LandedWindow() {
   useLayoutEffect(() => {
     const panel = panelRef.current;
     if (!panel || !geometry) return;
-    setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - 24));
-  }, [rows, geometry, panelTop, settingsOpened]);
+    setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
+    updateListEdges();
+  }, [rows, geometry, panelTop, settingsOpened, updateListEdges]);
 
   useLayoutEffect(() => {
     if (tipVisible && tipRef.current) setTipHeight(Math.ceil(tipRef.current.offsetHeight));
@@ -558,7 +578,15 @@ export default function LandedWindow() {
             <span className="landed-conf-text">{confirmation?.text}</span>
           </div>
 
-          <div className="landed-panel" style={{ top: panelTop, width: PANEL_WIDTH }} ref={panelRef}>
+          <div
+            className="landed-panel"
+            style={{
+              top: panelTop,
+              width: PANEL_WIDTH,
+              maxHeight: geometry.height - PANEL_SHADOW_ROOM - panelTop - 8,
+            }}
+            ref={panelRef}
+          >
             <div className="landed-head">
               <span>Landed today</span>
               <span className="landed-head-count">{counts.total}</span>
@@ -566,8 +594,13 @@ export default function LandedWindow() {
             {rows.length === 0 ? (
               <p className="landed-empty">Nothing yet today. Captures show up here as they land.</p>
             ) : (
-              <ul className="landed-rows">
-                {rows.slice(0, MAX_ROWS).map((row) => (
+              <ul
+                className="landed-rows"
+                ref={listRef}
+                onScroll={onListScroll}
+                data-more={moreBelow ? "" : undefined}
+              >
+                {rows.map((row) => (
                   <li
                     key={row.id}
                     data-row={row.id}
@@ -592,14 +625,15 @@ export default function LandedWindow() {
                         <span className="landed-row-where">{row.where}</span>
                       </span>
                     )}
+                    <time className="landed-row-time" dateTime={row.createdAt}>
+                      {parseStoredTimestamp(row.createdAt).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </time>
                   </li>
                 ))}
               </ul>
-            )}
-            {rows.length > MAX_ROWS && (
-              <p className="landed-more" data-action="library">
-                +{rows.length - MAX_ROWS} more in the Library
-              </p>
             )}
           </div>
         </div>

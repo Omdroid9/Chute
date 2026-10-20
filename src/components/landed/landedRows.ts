@@ -30,6 +30,8 @@ export interface LandedRow {
   targets: LandedTarget[];
   problem: SyncProblem | null;
   reminderTime: string | null;
+  /** When it was captured, as stored (UTC). */
+  createdAt: string;
 }
 
 export interface LandedCounts {
@@ -56,7 +58,7 @@ export function toLandedRow(
       link: links.find((link) => link.destination === destination) ?? null,
     }));
 
-  const base = { id: capture.id, text, reminderTime: capture.reminder_time };
+  const base = { id: capture.id, text, reminderTime: capture.reminder_time, createdAt: capture.created_at };
   if (targets.length === 0) {
     return { ...base, where: "Chute", status: "kept", targets, problem: null };
   }

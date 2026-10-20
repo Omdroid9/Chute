@@ -37,7 +37,11 @@ pub const LABEL: &str = "landed";
 /// Room for the open panel plus its shadow. Everything outside the hot rect
 /// is click-through, so a generous canvas costs nothing.
 const CANVAS_WIDTH: f64 = 440.0;
-const CANVAS_HEIGHT: f64 = 340.0;
+/// The open panel grows with the day's captures up to this share of the
+/// screen's height, then scrolls.
+const CANVAS_SCREEN_SHARE: f64 = 0.62;
+const CANVAS_MIN_HEIGHT: f64 = 340.0;
+const CANVAS_MAX_HEIGHT: f64 = 760.0;
 /// Virtual notch drawn on screens without a real one.
 const TAB_WIDTH: f64 = 46.0;
 const TAB_HEIGHT: f64 = 14.0;
@@ -149,14 +153,17 @@ fn layout_for(screen: &NSScreen) -> (NSRect, NSRect, Geometry) {
       false,
     ),
   };
+  let canvas_height = (screen_frame.size.height * CANVAS_SCREEN_SHARE)
+    .clamp(CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT)
+    .round();
   let frame = NSRect::new(
-    NSPoint::new((centre_x - CANVAS_WIDTH / 2.0).round(), screen_top - CANVAS_HEIGHT),
-    NSSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
+    NSPoint::new((centre_x - CANVAS_WIDTH / 2.0).round(), screen_top - canvas_height),
+    NSSize::new(CANVAS_WIDTH, canvas_height),
   );
   let notch_x = centre_x - notch_width / 2.0 - frame.origin.x;
   let geometry = Geometry {
     width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    height: canvas_height,
     notch: Rect { x: notch_x, y: 0.0, width: notch_width, height: notch_height },
     has_notch,
   };
@@ -345,7 +352,7 @@ pub fn start(app: &AppHandle) {
 
   let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
     .title("Landed")
-    .inner_size(CANVAS_WIDTH, CANVAS_HEIGHT)
+    .inner_size(CANVAS_WIDTH, CANVAS_MIN_HEIGHT)
     .decorations(false)
     .transparent(true)
     .background_color(tauri::window::Color(0, 0, 0, 0))
