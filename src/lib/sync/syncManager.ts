@@ -1,6 +1,9 @@
 import {
+  enqueueCaptureAppends,
   getCaptureById,
   getSetting,
+  hasCaptureAppend,
+  setCaptureContent,
   getSettings,
   listDueRecurringReminderCaptures,
   listCaptures,
@@ -14,8 +17,10 @@ import type { Capture } from "../../types";
 import { isMacOS } from "../platform";
 import { nextRecurrenceAfter, recurrenceLabelFromRule, toLocalIso } from "../recurrence";
 import { createAppleReminder } from "./appleRemindersSync";
-import type { SyncDestination } from "./destinations";
+import { runAppendPass } from "./appendEngine";
+import { isSynced, targetedDestinations, type SyncDestination } from "./destinations";
 import {
+  destinationReady,
   pendingDestinations,
   requiresSync,
   syncCapture,
@@ -97,6 +102,54 @@ export interface CaptureSyncOutcome {
   captureId: string;
   landed: SyncDestination[];
   failed: SyncDestination[];
+  /** These were additions to a capture that had already landed. */
+  added?: boolean;
+}
+
+export interface AddToCaptureResult {
+  /** Apps the addition goes to as an edit or follow-up (empty if nothing was sent yet). */
+  appendedTo: SyncDestination[];
+}
+
+/**
+ * "Add to" a capture: the text is merged into the capture, so anything not
+ * sent yet goes out complete; apps it already reached get the addition queued
+ * for the next sync pass. Nothing is ever attached without the user asking.
+ */
+export async function addToCapture(captureId: string, addition: string): Promise<AddToCaptureResult> {
+  const text = addition.trim();
+  if (!text) {
+    throw new Error("Type what to add first.");
+  }
+  const capture = await getCaptureById(captureId);
+  if (!capture) {
+    throw new Error("That capture no longer exists.");
+  }
+  const config = await loadSyncConfig();
+  await setCaptureContent(captureId, `${capture.content.trimEnd()}\n${text}`);
+  const appendedTo = targetedDestinations(capture).filter(
+    (destination) => isSynced(capture, destination) && destinationReady(capture, destination, config),
+  );
+  if (appendedTo.length > 0) {
+    await enqueueCaptureAppends(captureId, appendedTo, text);
+  }
+  return { appendedTo };
+}
+
+/**
+ * Text added while a capture was mid-send missed the apps that send reached:
+ * queue it for them, unless `addToCapture` already did (it saw them as sent).
+ */
+async function queueLateAdditions(sent: Capture, landed: SyncDestination[]): Promise<void> {
+  const fresh = await getCaptureById(sent.id);
+  if (!fresh || fresh.content === sent.content || !fresh.content.startsWith(sent.content)) return;
+  const extra = fresh.content.slice(sent.content.length).trim();
+  if (!extra) return;
+  const missing: SyncDestination[] = [];
+  for (const destination of landed) {
+    if (!(await hasCaptureAppend(sent.id, destination, extra))) missing.push(destination);
+  }
+  if (missing.length > 0) await enqueueCaptureAppends(sent.id, missing, extra);
 }
 
 function toDisplayTime(input: Date): string {
@@ -236,12 +289,27 @@ export async function runSyncPass(options?: {
     }
 
     const landed = landedDestinations(result);
+    if (landed.length > 0) {
+      try {
+        await queueLateAdditions(capture, landed);
+      } catch (error) {
+        console.error("Could not queue additions made during the sync", error);
+      }
+    }
     options?.onCaptureSynced?.({
       captureId: capture.id,
       landed,
       failed: result.attempted.filter((destination) => !landed.includes(destination)),
     });
   }
+
+  // Then additions to captures that had already landed ("Add to").
+  const appended = await runAppendPass(config, (outcome) =>
+    options?.onCaptureSynced?.({ ...outcome, added: true }),
+  );
+  stats.syncAttempts += appended.succeeded + appended.failed;
+  stats.syncSucceeded += appended.succeeded;
+  stats.syncFailed += appended.failed;
 
   let lastSyncLabel = await getLastSyncLabel();
   if (stats.syncSucceeded > 0) {

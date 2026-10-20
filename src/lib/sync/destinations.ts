@@ -26,6 +26,18 @@ export const DESTINATION_LABELS: Record<SyncDestination, string> = {
   discord: "Discord",
 };
 
+/** Prefixes for stored sync errors ("<Label>: <error>"), as syncErrors reads them. */
+export const SYNC_ERROR_LABELS: Record<SyncDestination, string> = {
+  reminders: "Reminders",
+  apple_calendar: "Apple Calendar",
+  apple_notes: "Apple Notes",
+  google_calendar: "Google Calendar",
+  google_tasks: "Google Tasks",
+  notion: "Notion",
+  slack: "Slack",
+  discord: "Discord",
+};
+
 // `target_apple_reminders` / `synced_apple_reminders` are Apple Notes (legacy
 // column names); `target_reminders` is the Reminders app.
 const COLUMNS: Record<SyncDestination, { target: keyof Capture; synced: keyof Capture }> = {
@@ -50,4 +62,10 @@ export function isSynced(capture: Capture, destination: SyncDestination): boolea
 /** The capture's chosen destinations, in display order. */
 export function targetedDestinations(capture: Capture): SyncDestination[] {
   return SYNC_DESTINATIONS.filter((destination) => isTargeted(capture, destination));
+}
+
+/** "Reminders", "Notes + Slack", "Reminders +2". */
+export function describeDestinations(destinations: SyncDestination[]): string {
+  const labels = destinations.map((destination) => DESTINATION_LABELS[destination]);
+  return labels.length > 2 ? `${labels[0]} +${labels.length - 1}` : labels.join(" + ");
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { SyncConfig } from "../../lib/sync/syncEngine";
-import { countLanded, describeDestinations, primaryTarget, toLandedRow } from "./landedRows";
+import { describeDestinations } from "../../lib/sync/destinations";
+import { countLanded, primaryTarget, toLandedRow } from "./landedRows";
 
 const CONFIG: SyncConfig = {
   slackWebhookUrl: "https://hooks.slack.com/services/x",
@@ -91,6 +92,23 @@ describe("toLandedRow", () => {
     );
     expect(row.status).toBe("landed");
     expect(row.problem).toBeNull();
+  });
+});
+
+describe("toLandedRow with additions", () => {
+  const landed = makeCapture({ target_reminders: 1, synced_reminders: 1 });
+
+  it("reads as on its way while an addition is queued", () => {
+    expect(toLandedRow(landed, CONFIG, [], { pending: 1, error: null }).status).toBe("pending");
+  });
+
+  it("needs attention when an addition is stuck", () => {
+    const row = toLandedRow(landed, CONFIG, [], {
+      pending: 1,
+      error: "Reminders: Not authorized to send Apple events to Reminders. (-1743)",
+    });
+    expect(row.status).toBe("failed");
+    expect(row.problem?.kind).toBe("permission");
   });
 });
 

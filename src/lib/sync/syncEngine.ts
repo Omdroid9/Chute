@@ -169,74 +169,54 @@ function isPermissionError(error: unknown): boolean {
   );
 }
 
-async function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<string> {
-  const createTask = async (accessToken: string) =>
+/**
+ * Run a Google call with the saved access token; on a 401, refresh it once
+ * through the integration backend (saving the new token) and try again.
+ */
+export async function withGoogleAccess<T>(config: SyncConfig, task: (accessToken: string) => Promise<T>): Promise<T> {
+  try {
+    return await task(config.googleTasksAccessToken!);
+  } catch (error) {
+    if (!isUnauthorizedError(error) || !config.googleTasksRefreshToken || !config.integrationBackendUrl) {
+      throw error;
+    }
+  }
+
+  const refreshedAccessToken = await refreshGoogleAccessToken(
+    config.integrationBackendUrl,
+    config.googleTasksRefreshToken,
+  );
+
+  await setSetting("google_tasks_access_token", refreshedAccessToken);
+  config.googleTasksAccessToken = refreshedAccessToken;
+
+  return task(refreshedAccessToken);
+}
+
+function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<string> {
+  return withGoogleAccess(config, (accessToken) =>
     createGoogleTask({
       accessToken,
       listId: config.googleTasksListId!,
       title: eventTitle(capture.content),
       notes: `Chute list: ${capture.list_name}`,
       due: capture.reminder_time ?? undefined,
-    });
-
-  try {
-    return await createTask(config.googleTasksAccessToken!);
-  } catch (error) {
-    if (
-      !isUnauthorizedError(error) ||
-      !config.googleTasksRefreshToken ||
-      !config.integrationBackendUrl
-    ) {
-      throw error;
-    }
-  }
-
-  const refreshedAccessToken = await refreshGoogleAccessToken(
-    config.integrationBackendUrl,
-    config.googleTasksRefreshToken,
+    }),
   );
-
-  await setSetting("google_tasks_access_token", refreshedAccessToken);
-  config.googleTasksAccessToken = refreshedAccessToken;
-
-  return createTask(refreshedAccessToken);
 }
 
 /** Resolves to the event id, which is derived from the capture id (so it's stable). */
 async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): Promise<string> {
-  const createEvent = async (accessToken: string) => {
-    await createGoogleCalendarEvent({
+  await withGoogleAccess(config, (accessToken) =>
+    createGoogleCalendarEvent({
       accessToken,
       calendarId: config.googleCalendarId!,
       summary: eventTitle(capture.content),
       description: `Chute list: ${capture.list_name}\nTag: ${capture.tag}`,
       reminderTime: capture.reminder_time,
       eventId: calendarEventId(capture.id),
-    });
-  };
-
-  try {
-    await createEvent(config.googleTasksAccessToken!);
-    return calendarEventId(capture.id);
-  } catch (error) {
-    if (
-      !isUnauthorizedError(error) ||
-      !config.googleTasksRefreshToken ||
-      !config.integrationBackendUrl
-    ) {
-      throw error;
-    }
-  }
-
-  const refreshedAccessToken = await refreshGoogleAccessToken(
-    config.integrationBackendUrl,
-    config.googleTasksRefreshToken,
+    }),
   );
-
-  await setSetting("google_tasks_access_token", refreshedAccessToken);
-  config.googleTasksAccessToken = refreshedAccessToken;
-
-  await createEvent(refreshedAccessToken);
   return calendarEventId(capture.id);
 }
 

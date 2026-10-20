@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getCaptureLinksFor, getSetting, listCapturesToday, setCaptureSyncError, setSetting } from "../../lib/db";
+import {
+  type AppendState,
+  getAppendStatesFor,
+  getCaptureLinksFor,
+  getSetting,
+  listCapturesToday,
+  retryCaptureAppends,
+  setCaptureSyncError,
+  setSetting,
+} from "../../lib/db";
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
-import { DESTINATION_LABELS } from "../../lib/sync/destinations";
+import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
 import {
   countLanded,
-  describeDestinations,
   primaryTarget,
   toLandedRow,
   type LandedCounts,
@@ -220,9 +228,18 @@ export default function LandedWindow() {
     const seq = ++refreshSeq.current;
     try {
       const [captures, config] = await Promise.all([listCapturesToday(50), loadSyncConfig()]);
-      const links = await getCaptureLinksFor(captures.map((capture) => capture.id));
+      const ids = captures.map((capture) => capture.id);
+      const [links, appends] = await Promise.all([
+        getCaptureLinksFor(ids),
+        // The main window creates this table on launch; until then, no additions.
+        getAppendStatesFor(ids).catch(() => new Map<string, AppendState>()),
+      ]);
       if (seq !== refreshSeq.current) return;
-      setRows(captures.map((capture) => toLandedRow(capture, config, links.get(capture.id) ?? [])));
+      setRows(
+        captures.map((capture) =>
+          toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id)),
+        ),
+      );
       setNotionPageId(config.notionPageId);
     } catch (error) {
       console.error("Landed: could not load today's captures", error);
@@ -244,8 +261,9 @@ export default function LandedWindow() {
           close(true);
           return;
         }
-        // Clear the error so the row reads as on its way, then ask for a sync.
+        // Clear the errors so the row reads as on its way, then ask for a sync.
         await setCaptureSyncError(row.id, null);
+        await retryCaptureAppends(row.id);
         announcedFailures.current.delete(row.id);
         await emit("chute://request-sync");
         await refresh();
@@ -276,6 +294,15 @@ export default function LandedWindow() {
       }
       if (action === "fix" && row) {
         void fix(row);
+        return;
+      }
+      if (action === "add" && row) {
+        // Open the capture bar in "Adding to" mode for this capture.
+        void (async () => {
+          await invoke("show_capture_window");
+          await emit("chute://add-to", { captureId: row.id });
+        })().catch((error) => console.error("Landed: could not start adding", error));
+        close(true);
         return;
       }
       if (action === "library") {
@@ -378,7 +405,8 @@ export default function LandedWindow() {
       if (stageRef.current !== "idle") return;
       if (outcome.landed.length > 0) {
         announcedFailures.current.delete(outcome.captureId);
-        showConfirmation({ tone: "ok", text: `Landed in ${describeDestinations(outcome.landed)}` });
+        const verb = outcome.added ? "Added to" : "Landed in";
+        showConfirmation({ tone: "ok", text: `${verb} ${describeDestinations(outcome.landed)}` });
       } else if (outcome.failed.length > 0 && !announcedFailures.current.has(outcome.captureId)) {
         announcedFailures.current.add(outcome.captureId);
         showConfirmation({ tone: "fail", text: `${DESTINATION_LABELS[outcome.failed[0]]} needs you` });
@@ -547,7 +575,14 @@ export default function LandedWindow() {
                         {fixLabel(row, settingsOpened.has(row.id))}
                       </span>
                     ) : (
-                      <span className="landed-row-where">{row.where}</span>
+                      <span className="landed-row-end">
+                        {hoverId === row.id && (
+                          <span className="landed-row-add" data-action="add">
+                            Add
+                          </span>
+                        )}
+                        <span className="landed-row-where">{row.where}</span>
+                      </span>
                     )}
                   </li>
                 ))}

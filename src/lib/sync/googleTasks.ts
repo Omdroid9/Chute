@@ -45,6 +45,24 @@ export async function createGoogleTask(input: {
   return readJsonId(response, (task) => task.id);
 }
 
+/** Add a line to the notes of a task Chute created earlier. */
+export async function appendToGoogleTaskNotes(input: {
+  accessToken: string;
+  listId: string;
+  taskId: string;
+  addition: string;
+}): Promise<void> {
+  const url = `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(input.listId)}/tasks/${encodeURIComponent(input.taskId)}`;
+  const current = await httpRequest(url, { method: "GET", headers: authHeaders(input.accessToken) });
+  const task = (await current.json()) as { notes?: string };
+  const notes = task.notes?.trim() ? `${task.notes}\n${input.addition}` : input.addition;
+  await httpRequest(url, {
+    method: "PATCH",
+    headers: { ...authHeaders(input.accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+}
+
 export async function refreshGoogleAccessToken(
   backendBaseUrl: string,
   refreshToken: string,

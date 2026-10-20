@@ -19,3 +19,8 @@ export function formatTaggedListMessage(content: string, tag: CaptureTag, listNa
   }
   return `${base}\n\u{1F5C2}\u{FE0F} ${safeList}`;
 }
+
+/** An addition posted after the original, for chats that can't edit it. */
+export function followUpMessage(originalTitle: string, addition: string): string {
+  return `\u21B3 ${addition}\n_Added to \u201C${originalTitle}\u201D_`;
+}

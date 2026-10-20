@@ -11,6 +11,7 @@ import type {
   CaptureLink,
   LinkDestination,
 } from "../types";
+import type { SyncDestination } from "./sync/destinations";
 
 const DB_URL = "sqlite:chute.db";
 const SECURE_STORE_PATH = "secure-settings.json";
@@ -339,6 +340,22 @@ async function runBootstrap(): Promise<void> {
       kind TEXT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (capture_id, destination)
+    );
+  `);
+
+  // Additions to a capture that already reached an app ("Add to"): one row per
+  // addition per app, sent by the sync pass. Gives up after a few attempts
+  // until the user retries from Landed.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS capture_appends (
+      id TEXT PRIMARY KEY,
+      capture_id TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      content TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      error TEXT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -687,12 +704,152 @@ export async function getCaptureLinksFor(captureIds: string[]): Promise<Map<stri
   return byCapture;
 }
 
+/** Replace a capture's text (an addition merged in before it was sent anywhere). */
+export async function setCaptureContent(id: string, content: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`UPDATE captures SET content = $1 WHERE id = $2;`, [content, id]);
+}
+
+/** Attempts before an addition stops retrying on its own. */
+export const APPEND_MAX_ATTEMPTS = 3;
+
+export interface CaptureAppend {
+  id: string;
+  captureId: string;
+  destination: SyncDestination;
+  content: string;
+  attempts: number;
+  error: string | null;
+}
+
+/** Queue an addition for each app the capture already landed in. */
+export async function enqueueCaptureAppends(
+  captureId: string,
+  destinations: SyncDestination[],
+  content: string,
+): Promise<void> {
+  const db = await getDatabase();
+  for (const destination of destinations) {
+    await db.execute(
+      `
+        INSERT INTO capture_appends (id, capture_id, destination, content)
+        VALUES ($1, $2, $3, $4);
+      `,
+      [crypto.randomUUID(), captureId, destination, content],
+    );
+  }
+}
+
+/** Additions still to send, oldest first, so they land in the order typed. */
+export async function listPendingAppends(limit = 50): Promise<CaptureAppend[]> {
+  const db = await getDatabase();
+  const rows = await db.select<
+    Array<{
+      id: string;
+      capture_id: string;
+      destination: SyncDestination;
+      content: string;
+      attempts: number;
+      error: string | null;
+    }>
+  >(
+    `
+      SELECT id, capture_id, destination, content, attempts, error
+      FROM capture_appends
+      WHERE done = 0 AND attempts < $1
+      ORDER BY created_at ASC, rowid ASC
+      LIMIT $2;
+    `,
+    [APPEND_MAX_ATTEMPTS, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    captureId: row.capture_id,
+    destination: row.destination,
+    content: row.content,
+    attempts: row.attempts,
+    error: row.error,
+  }));
+}
+
+/** Whether this exact addition is already queued (or sent) for this app. */
+export async function hasCaptureAppend(
+  captureId: string,
+  destination: SyncDestination,
+  content: string,
+): Promise<boolean> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ id: string }>>(
+    `
+      SELECT id FROM capture_appends
+      WHERE capture_id = $1 AND destination = $2 AND content = $3
+      LIMIT 1;
+    `,
+    [captureId, destination, content],
+  );
+  return rows.length > 0;
+}
+
+export async function markAppendDone(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`UPDATE capture_appends SET done = 1, error = NULL WHERE id = $1;`, [id]);
+}
+
+export async function markAppendFailed(id: string, error: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`UPDATE capture_appends SET attempts = attempts + 1, error = $1 WHERE id = $2;`, [
+    error.slice(0, 500),
+    id,
+  ]);
+}
+
+/** Give a capture's unsent additions a fresh set of attempts (Landed's Retry). */
+export async function retryCaptureAppends(captureId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `UPDATE capture_appends SET attempts = 0, error = NULL WHERE capture_id = $1 AND done = 0;`,
+    [captureId],
+  );
+}
+
+export interface AppendState {
+  /** Additions not sent yet. */
+  pending: number;
+  /** The latest error among them, if any ("<Label>: <error>"). */
+  error: string | null;
+}
+
+/** Unsent additions for many captures at once, keyed by capture id. */
+export async function getAppendStatesFor(captureIds: string[]): Promise<Map<string, AppendState>> {
+  const states = new Map<string, AppendState>();
+  if (captureIds.length === 0) return states;
+  const db = await getDatabase();
+  const placeholders = captureIds.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await db.select<Array<{ capture_id: string; error: string | null }>>(
+    `
+      SELECT capture_id, error
+      FROM capture_appends
+      WHERE done = 0 AND capture_id IN (${placeholders})
+      ORDER BY created_at ASC, rowid ASC;
+    `,
+    captureIds,
+  );
+  for (const row of rows) {
+    const state = states.get(row.capture_id) ?? { pending: 0, error: null };
+    state.pending += 1;
+    state.error = row.error ?? state.error;
+    states.set(row.capture_id, state);
+  }
+  return states;
+}
+
 /** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,
- * so the agent job and link rows are removed explicitly. */
+ * so the agent job, link and addition rows are removed explicitly. */
 export async function deleteCapture(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM agent_jobs WHERE capture_id = $1;`, [id]);
   await db.execute(`DELETE FROM capture_links WHERE capture_id = $1;`, [id]);
+  await db.execute(`DELETE FROM capture_appends WHERE capture_id = $1;`, [id]);
   await db.execute(`DELETE FROM captures WHERE id = $1;`, [id]);
 }
 

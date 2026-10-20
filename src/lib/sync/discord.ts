@@ -1,6 +1,6 @@
 import type { CaptureTag } from "../../types";
-import { httpPostJson, readJsonId } from "../net/http";
-import { formatTaggedListMessage } from "./messageFormat";
+import { httpPostJson, httpRequest, readJsonId } from "../net/http";
+import { followUpMessage, formatTaggedListMessage } from "./messageFormat";
 
 /**
  * Discord only returns the posted message (and its id, which lets a webhook
@@ -30,6 +30,26 @@ export async function sendDiscordCapture(
     },
   );
   return readJsonId(response, (message) => message.id);
+}
+
+/**
+ * Replace a message the webhook posted earlier (Discord lets a webhook edit
+ * its own messages), keeping any thread the webhook URL targets.
+ */
+export async function editDiscordMessage(webhookUrl: string, messageId: string, content: string): Promise<void> {
+  const url = new URL(webhookUrl);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/messages/${encodeURIComponent(messageId)}`;
+  url.searchParams.delete("wait");
+  await httpRequest(url.toString(), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+/** Without the original's id, an addition goes out as a follow-up. */
+export async function sendDiscordFollowUp(webhookUrl: string, originalTitle: string, addition: string): Promise<void> {
+  await httpPostJson(webhookUrl, { content: followUpMessage(originalTitle, addition) });
 }
 
 export async function testDiscordWebhook(webhookUrl: string): Promise<void> {

@@ -21,6 +21,11 @@ export async function createAppleReminder(input: CreateAppleReminderInput): Prom
   });
 }
 
+/** Add a line to the notes of a reminder Chute created earlier. */
+export async function appendToAppleReminder(id: string, text: string): Promise<void> {
+  await invoke("append_to_reminder", { id, text });
+}
+
 /** Verify Reminders automation works by creating a throwaway test reminder. */
 export async function testAppleReminders(list?: string): Promise<void> {
   await createAppleReminder({

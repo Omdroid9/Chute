@@ -1,6 +1,6 @@
 import type { CaptureTag } from "../../types";
 import { httpPostJson } from "../net/http";
-import { formatTaggedListMessage } from "./messageFormat";
+import { followUpMessage, formatTaggedListMessage } from "./messageFormat";
 
 export async function sendSlackCapture(
   webhookUrl: string,
@@ -14,6 +14,11 @@ export async function sendSlackCapture(
       text: formatTaggedListMessage(content, tag, listName),
     },
   );
+}
+
+/** Webhooks can't edit, so an addition goes out as a short follow-up. */
+export async function sendSlackFollowUp(webhookUrl: string, originalTitle: string, addition: string): Promise<void> {
+  await httpPostJson(webhookUrl, { text: followUpMessage(originalTitle, addition) });
 }
 
 export async function testSlackWebhook(webhookUrl: string): Promise<void> {

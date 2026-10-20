@@ -1,5 +1,5 @@
 //! Find a capture again in the Apple app it landed in, using the id Chute kept
-//! when it was created (see `capture_links`).
+//! when it was created (see `capture_links`): open it there, or add to it.
 //!
 //! Scripts take their values as argv, never interpolated. Everything runs off
 //! the main thread: AppleScript can take a second, and a sync command would
@@ -129,5 +129,117 @@ pub fn open_automation_settings() -> Result<(), String> {
   #[cfg(not(target_os = "macos"))]
   {
     Err("Automation settings are only available on macOS.".to_string())
+  }
+}
+
+// Additions go to the same item: a line in a reminder's or event's notes, a
+// block at the end of a note. Errors carry AppleScript's number so -1743
+// (no Automation permission) reads as such in Landed.
+#[cfg(target_os = "macos")]
+const APPEND_TO_REMINDER: &str = r#"on run argv
+  tell application "Reminders"
+    set theReminder to reminder id (item 1 of argv)
+    set oldBody to body of theReminder
+    if oldBody is missing value then set oldBody to ""
+    if oldBody is "" then
+      set body of theReminder to (item 2 of argv)
+    else
+      set body of theReminder to oldBody & linefeed & (item 2 of argv)
+    end if
+  end tell
+  return "ok"
+end run"#;
+
+#[cfg(target_os = "macos")]
+const APPEND_TO_NOTE: &str = r#"on run argv
+  tell application "Notes"
+    set theNote to note id (item 1 of argv)
+    set body of theNote to (body of theNote) & (item 2 of argv)
+  end tell
+  return "ok"
+end run"#;
+
+// The event is addressed by id (its uid) in each calendar in turn; a by-id
+// lookup that misses just errors, unlike `whose`, which can crash Calendar.
+#[cfg(target_os = "macos")]
+const APPEND_TO_EVENT: &str = r#"on run argv
+  set eventUid to item 1 of argv
+  set addition to item 2 of argv
+  tell application "Calendar"
+    repeat with aCal in every calendar
+      set found to false
+      try
+        set oldNotes to description of (event id eventUid of aCal)
+        set found to true
+      on error errMsg number errNum
+        if errNum is -1743 then error errMsg number errNum
+      end try
+      if found then
+        if oldNotes is missing value then set oldNotes to ""
+        if oldNotes is "" then
+          set description of (event id eventUid of aCal) to addition
+        else
+          set description of (event id eventUid of aCal) to oldNotes & linefeed & addition
+        end if
+        return "ok"
+      end if
+    end repeat
+  end tell
+  error "Couldn't find the event in Calendar."
+end run"#;
+
+#[cfg(target_os = "macos")]
+async fn run_append(script: &'static str, id: String, addition: String) -> Result<(), String> {
+  if id.trim().is_empty() {
+    return Err("No item to add to.".to_string());
+  }
+  tauri::async_runtime::spawn_blocking(move || run_osascript(script, &[id, addition]).map(|_| ()))
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Add a line to a reminder's notes.
+#[tauri::command]
+pub async fn append_to_reminder(id: String, text: String) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    run_append(APPEND_TO_REMINDER, id, text).await
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (id, text);
+    Err("Apple Reminders is only available on macOS.".to_string())
+  }
+}
+
+/// Add HTML (already escaped by the caller) to the end of a note.
+#[tauri::command]
+pub async fn append_to_apple_note(id: String, html: String) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    run_append(APPEND_TO_NOTE, id, html).await
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (id, html);
+    Err("Apple Notes is only available on macOS.".to_string())
+  }
+}
+
+/// Add a line to a Calendar event's notes.
+#[tauri::command]
+pub async fn append_to_calendar_event(uid: String, text: String) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    // Calendar refuses scripting until it's running (-600); start it hidden.
+    let _ = std::process::Command::new("open")
+      .args(["-g", "-j", "-a", "Calendar"])
+      .status();
+    run_append(APPEND_TO_EVENT, uid, text).await
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (uid, text);
+    Err("Apple Calendar is only available on macOS.".to_string())
   }
 }

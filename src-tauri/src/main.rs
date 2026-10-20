@@ -295,7 +295,10 @@ fn main() {
       landed::landed_set_hot_rect,
       landed::landed_set_enabled,
       apple_items::open_in_apple_app,
-      apple_items::open_automation_settings
+      apple_items::open_automation_settings,
+      apple_items::append_to_reminder,
+      apple_items::append_to_apple_note,
+      apple_items::append_to_calendar_event
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

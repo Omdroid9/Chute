@@ -1,6 +1,8 @@
 import type { Capture, CaptureLink } from "../../types";
+import type { AppendState } from "../../lib/db";
 import {
   DESTINATION_LABELS,
+  describeDestinations,
   isSynced,
   targetedDestinations,
   type SyncDestination,
@@ -36,13 +38,12 @@ export interface LandedCounts {
   pending: number;
 }
 
-/** "Reminders", "Notes + Slack", "Reminders +2". */
-export function describeDestinations(destinations: SyncDestination[]): string {
-  const labels = destinations.map((destination) => DESTINATION_LABELS[destination]);
-  return labels.length > 2 ? `${labels[0]} +${labels.length - 1}` : labels.join(" + ");
-}
-
-export function toLandedRow(capture: Capture, config: SyncConfig, links: CaptureLink[] = []): LandedRow {
+export function toLandedRow(
+  capture: Capture,
+  config: SyncConfig,
+  links: CaptureLink[] = [],
+  appends?: AppendState,
+): LandedRow {
   const text = capture.content.replace(/\s+/g, " ").trim();
   // A destination that isn't connected was never going to be sent to, so the
   // capture simply stayed in Chute as far as that app is concerned.
@@ -60,15 +61,27 @@ export function toLandedRow(capture: Capture, config: SyncConfig, links: Capture
     return { ...base, where: "Chute", status: "kept", targets, problem: null };
   }
 
-  const problem = describeSyncError(capture.last_sync_error);
+  const sendProblem = describeSyncError(capture.last_sync_error);
   const allSynced = targets.every((target) => target.synced);
-  const status: LandedStatus = allSynced ? "landed" : problem ? "failed" : "pending";
+  let status: LandedStatus = allSynced ? "landed" : sendProblem ? "failed" : "pending";
+  let problem = status === "failed" ? sendProblem : null;
+
+  // Additions ("Add to") still on their way, or stuck, count too.
+  if (appends && appends.pending > 0) {
+    if (appends.error && status !== "failed") {
+      status = "failed";
+      problem = describeSyncError(appends.error);
+    } else if (status === "landed") {
+      status = "pending";
+    }
+  }
+
   return {
     ...base,
     where: describeDestinations(targets.map((target) => target.destination)),
     status,
     targets,
-    problem: status === "failed" ? problem : null,
+    problem,
   };
 }
 

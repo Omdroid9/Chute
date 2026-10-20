@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { noteContentHtml } from "./noteFormat";
 
 export interface CreateAppleNoteInput {
   title: string;
@@ -18,6 +19,11 @@ export async function createAppleNote(input: CreateAppleNoteInput): Promise<stri
     title: input.title,
     body: input.body,
   });
+}
+
+/** Add text to the end of a note Chute created earlier. */
+export async function appendToAppleNote(id: string, text: string): Promise<void> {
+  await invoke("append_to_apple_note", { id, html: noteContentHtml(text) });
 }
 
 /** Verify Apple Notes automation works by creating a throwaway test note. */

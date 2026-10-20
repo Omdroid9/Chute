@@ -27,28 +27,30 @@ function clampTitle(value: string): string {
   return value.length <= 1800 ? value : `${value.slice(0, 1797)}...`;
 }
 
+function paragraphBlock(content: string) {
+  return {
+    object: "block",
+    type: "paragraph",
+    paragraph: {
+      rich_text: [
+        {
+          type: "text",
+          text: {
+            content,
+          },
+        },
+      ],
+    },
+  };
+}
+
 /** Appends a paragraph to the page; resolves to the new block's id. */
 async function appendToPage(parentId: string, token: string, content: string): Promise<string> {
   const response = await httpRequest(`https://api.notion.com/v1/blocks/${normalizeParentId(parentId)}/children`, {
     method: "PATCH",
     headers: notionHeaders(token),
     body: JSON.stringify({
-      children: [
-        {
-          object: "block",
-          type: "paragraph",
-          paragraph: {
-            rich_text: [
-              {
-                type: "text",
-                text: {
-                  content,
-                },
-              },
-            ],
-          },
-        },
-      ],
+      children: [paragraphBlock(content)],
     }),
   });
   return readJsonId(response, (body) => (body.results as Array<{ id?: string }> | undefined)?.[0]?.id);
@@ -153,6 +155,25 @@ export async function appendNotionCapture(input: {
       );
     }
   }
+}
+
+/**
+ * Add a paragraph where a capture landed: right after its block on the page,
+ * inside its database page, or (if Chute lost track) at the end of the page.
+ */
+export async function appendNotionAddition(input: {
+  token: string;
+  pageId: string;
+  ref: NotionCaptureRef | null;
+  addition: string;
+}): Promise<void> {
+  const parentId = input.ref?.kind === "page" ? input.ref.id : input.pageId;
+  const after = input.ref?.kind === "block" ? input.ref.id : undefined;
+  await httpRequest(`https://api.notion.com/v1/blocks/${normalizeParentId(parentId)}/children`, {
+    method: "PATCH",
+    headers: notionHeaders(input.token),
+    body: JSON.stringify({ children: [paragraphBlock(input.addition)], ...(after ? { after } : {}) }),
+  });
 }
 
 export async function testNotionConnection(token: string, pageId: string): Promise<void> {

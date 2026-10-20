@@ -145,6 +145,24 @@ export async function createGoogleCalendarEvent(input: {
   }
 }
 
+/** Add a line to the description of an event Chute created earlier. */
+export async function appendToGoogleEventDescription(input: {
+  accessToken: string;
+  calendarId: string;
+  eventId: string;
+  addition: string;
+}): Promise<void> {
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events/${encodeURIComponent(input.eventId)}`;
+  const current = await httpRequest(url, { method: "GET", headers: authHeaders(input.accessToken) });
+  const event = (await current.json()) as { description?: string };
+  const description = event.description?.trim() ? `${event.description}\n${input.addition}` : input.addition;
+  await httpRequest(url, {
+    method: "PATCH",
+    headers: { ...authHeaders(input.accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ description }),
+  });
+}
+
 export async function testGoogleCalendarConnection(
   accessToken: string,
   calendarId: string,

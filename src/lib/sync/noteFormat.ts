@@ -20,7 +20,8 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-export function appleNoteBody(content: string, listName: string, tag: string): string {
+/** Note HTML for typed content: bullets, numbered lines and checkboxes kept. */
+export function noteContentHtml(content: string): string {
   const html: string[] = [];
   let items: string[] = [];
   let listTag: "ul" | "ol" | null = null;
@@ -63,7 +64,10 @@ export function appleNoteBody(content: string, listName: string, tag: string): s
     }
   }
   flushList();
+  return html.join("");
+}
 
+export function appleNoteBody(content: string, listName: string, tag: string): string {
   const footer = `<div><br></div><div><i>${escapeHtml(listName)} • ${escapeHtml(tag)}</i></div>`;
-  return `${html.join("")}${footer}`;
+  return `${noteContentHtml(content)}${footer}`;
 }

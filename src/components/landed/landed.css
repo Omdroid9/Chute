@@ -318,6 +318,21 @@ html[data-window="landed"] body {
   background: rgba(250, 199, 117, 0.26);
 }
 
+.landed-row-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.landed-row-add {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 .landed-row-where {
   color: var(--landed-muted);
   font-size: 11.5px;

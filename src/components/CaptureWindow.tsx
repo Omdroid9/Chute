@@ -13,8 +13,10 @@ import {
   getDailyRecapStats,
   getSetting,
   getTotalCaptureCount,
+  getCaptureById,
   insertCapture,
   listCaptures,
+  listCapturesToday,
   listManagedLists,
   listRoutingRules,
   recordRoutingRuleHit,
@@ -49,6 +51,9 @@ import {
   type VoicePttStatus,
 } from "../lib/voice";
 import { useAppStore } from "../store/useAppStore";
+import { addToCapture, loadSyncConfig } from "../lib/sync/syncManager";
+import { destinationReady, type SyncConfig } from "../lib/sync/syncEngine";
+import { describeDestinations, targetedDestinations } from "../lib/sync/destinations";
 import TagChip from "./TagChip";
 import ListPicker from "./ListPicker";
 import CaptureProductTour from "./CaptureProductTour";
@@ -304,6 +309,30 @@ const IconMic = ({ size = 16 }: IconProps) => (
   </svg>
 );
 
+/** A capture Enter can add to, as shown in the "Adding to" strip. */
+interface AddCandidate {
+  id: string;
+  title: string;
+  where: string;
+}
+
+function toAddCandidate(capture: Capture, config: SyncConfig): AddCandidate {
+  const ready = targetedDestinations(capture).filter((destination) =>
+    destinationReady(capture, destination, config),
+  );
+  return {
+    id: capture.id,
+    title: capture.content.split("\n")[0]?.trim() || capture.content.trim(),
+    where: ready.length > 0 ? describeDestinations(ready) : "Chute",
+  };
+}
+
+/** `created_at` is stored as UTC ("2026-10-19 20:00:00"). */
+function isFromToday(createdAt: string): boolean {
+  const created = new Date(`${createdAt.replace(" ", "T")}Z`);
+  return !Number.isNaN(created.getTime()) && created.toDateString() === new Date().toDateString();
+}
+
 export default function CaptureWindow() {
   const { update, restartToUpdate } = useAutoUpdater();
   const [text, setText] = useState("");
@@ -355,6 +384,9 @@ export default function CaptureWindow() {
   const [managedLists, setManagedLists] = useState<string[]>([DEFAULT_LIST, DISTRACTION_LIST]);
   const [recentCaptures, setRecentCaptures] = useState<Capture[]>([]);
   const [recentIndex, setRecentIndex] = useState<number | null>(null);
+  // "Add to" mode: Enter adds the text to one of today's captures instead of
+  // making a new one. ↑/↓ choose which (newest first); Esc goes back.
+  const [addTarget, setAddTarget] = useState<{ candidates: AddCandidate[]; index: number } | null>(null);
   const [manualReminderTime, setManualReminderTime] = useState<string | null>(null);
   const [pulse, setPulse] = useState(0);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -373,6 +405,45 @@ export default function CaptureWindow() {
     ReturnType<typeof loadIntegrationSettings>
   > | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /** Enter "Add to" mode on today's captures, starting at `captureId` (default: newest). */
+  const enterAddMode = useCallback(
+    async (captureId?: string) => {
+      try {
+        const [captures, config] = await Promise.all([listCapturesToday(20), loadSyncConfig()]);
+        const candidates = captures.map((capture) => toAddCandidate(capture, config));
+        let index = captureId ? candidates.findIndex((candidate) => candidate.id === captureId) : 0;
+        if (captureId && index < 0) {
+          const capture = await getCaptureById(captureId);
+          if (capture) {
+            candidates.unshift(toAddCandidate(capture, config));
+            index = 0;
+          }
+        }
+        if (candidates.length === 0 || index < 0) {
+          setSavedMessage("Nothing captured today to add to");
+          window.setTimeout(() => setSavedMessage(""), 1600);
+          return;
+        }
+        setSaveError(null);
+        setAddTarget({ candidates, index });
+        focusInputAtEnd();
+      } catch (error) {
+        console.error("Could not load captures to add to", error);
+      }
+    },
+    [focusInputAtEnd],
+  );
+
+  // Landed's "Add" opens the bar on a specific capture.
+  useEffect(() => {
+    const unlistenPromise = listen<{ captureId: string }>("chute://add-to", (event) => {
+      void enterAddMode(event.payload.captureId);
+    });
+    return () => {
+      unlistenPromise.then((dispose) => dispose()).catch(() => {});
+    };
+  }, [enterAddMode]);
 
   // Voice capture: subscribe to backend events. Transcripts (from either the
   // push-to-talk hotkey or the mic button) flow into the box like typed text.
@@ -1057,6 +1128,7 @@ export default function CaptureWindow() {
 
   useEffect(() => {
     const unlistenPromise = listen("chute://show-capture", () => {
+      setAddTarget(null);
       setPulse((value) => value + 1);
       setAllConfirm(false);
       setUndoStrip(
@@ -1171,7 +1243,53 @@ export default function CaptureWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSend]);
 
+  async function persistAddition(keepOpen: boolean) {
+    const target = addTarget?.candidates[addTarget.index];
+    if (!target || saving) {
+      return;
+    }
+    const addition = text.trim().slice(0, MAX_CHARS);
+    if (!addition) {
+      setSaveError("Type what to add first.");
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { appendedTo } = await addToCapture(target.id, addition);
+      // Inside the undo window the original hasn't left the Mac yet; its own
+      // timer sends the merged text. Otherwise send the addition now.
+      const waitingForUndo = undoRef.current?.id === target.id && !undoRef.current.synced;
+      if (!waitingForUndo) {
+        void emit("chute://request-sync");
+      }
+      void emit("chute://captures-changed");
+      setSavedMessage(
+        appendedTo.length > 0 ? `Adding to ${describeDestinations(appendedTo)}` : `Added to \u201C${target.title}\u201D`,
+      );
+      window.setTimeout(() => setSavedMessage(""), 1600);
+      setAddTarget(null);
+      resetDraft();
+      void loadRecentCaptures();
+      if (keepOpen) {
+        requestAnimationFrame(() => inputRef.current?.focus());
+      } else {
+        await invoke("hide_capture_window");
+      }
+    } catch (error) {
+      console.error("Add to capture failed", error);
+      setSaveError(error instanceof Error ? error.message : "Couldn't add to that capture.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function persistCapture(keepOpen: boolean, overrideDestinations?: CaptureDestinations) {
+    if (addTarget) {
+      await persistAddition(keepOpen);
+      return;
+    }
     const trimmed = (parsed.cleanedContent.trim() || text.trim()).slice(0, MAX_CHARS);
     if (!trimmed) {
       setSaveError("Type something to capture first.");
@@ -1428,6 +1546,10 @@ export default function CaptureWindow() {
 
   const canSend = (parsed.cleanedContent.trim() || text.trim()).length > 0;
   const isEmpty = text.trim().length === 0;
+  const addMode = addTarget !== null;
+  const addCandidate = addTarget ? addTarget.candidates[addTarget.index] : null;
+  // Discoverability for "Add to": the newest capture from today, if any.
+  const addHint = recentCaptures.find((capture) => isFromToday(capture.created_at)) ?? null;
   const showHints = totalCaptures !== null && totalCaptures < HINT_GRADUATION_CAPTURES;
 
   // Spotlight-scale when idle, expanded once typing reveals the controls.
@@ -1435,10 +1557,10 @@ export default function CaptureWindow() {
   // and a restored draft needs the expanded height immediately.
   const windowHeightRef = useRef(WINDOW_HEIGHT_COMPACT);
   useEffect(() => {
-    const base = isEmpty ? WINDOW_HEIGHT_COMPACT : WINDOW_HEIGHT_EXPANDED;
+    const base = isEmpty && !addMode ? WINDOW_HEIGHT_COMPACT : WINDOW_HEIGHT_EXPANDED;
     windowHeightRef.current = base;
     void invoke("resize_capture_window", { height: base }).catch(() => {});
-  }, [isEmpty, pulse]);
+  }, [isEmpty, addMode, pulse]);
 
   // Content-driven growth: when the textarea's content outgrows its visible
   // box, grow the window by the deficit (up to WINDOW_HEIGHT_MAX) so the
@@ -1467,12 +1589,15 @@ export default function CaptureWindow() {
   }, [text, isEmpty, splitActive, effectivePreviewLabel, teachOffer, saveError]);
 
   const placeholder = useMemo(() => {
+    if (addMode) {
+      return "Add a line to it…";
+    }
     if (captureLane === "distraction") {
       return "Park the distraction…";
     }
     const hint = CAPTURE_HINTS[pulse % CAPTURE_HINTS.length];
     return `Try: "${hint}"`;
-  }, [captureLane, pulse]);
+  }, [addMode, captureLane, pulse]);
 
   async function undoLastCapture() {
     const last = undoRef.current;
@@ -1580,7 +1705,22 @@ export default function CaptureWindow() {
             </div>
           </div>
 
-          {recap && isEmpty ? (
+          {addCandidate && addTarget ? (
+            <div className="flex shrink-0 items-center gap-2 px-1 text-[11px]" aria-live="polite">
+              <span className="text-[var(--accent)]" aria-hidden="true">
+                ↳
+              </span>
+              <span className="codex-muted shrink-0">Adding to</span>
+              <span className="min-w-0 truncate font-medium text-[var(--text)]">{addCandidate.title}</span>
+              <span className="codex-muted shrink-0">· {addCandidate.where}</span>
+              <span className="codex-muted ml-auto shrink-0 font-mono text-[10px]">
+                {addTarget.candidates.length > 1 ? `${addTarget.index + 1}/${addTarget.candidates.length} ↑↓ · ` : ""}
+                Esc
+              </span>
+            </div>
+          ) : null}
+
+          {recap && isEmpty && !addMode ? (
             <div className="group flex shrink-0 items-center gap-2 px-1 text-[11px]">
               <span className="inline-block h-1 w-1 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
               <span className="codex-muted min-w-0 truncate">
@@ -1616,8 +1756,9 @@ export default function CaptureWindow() {
             </div>
           ) : null}
 
-          {/* Lane + tags — contextual: only shown once there is something to file */}
-          {!isEmpty ? (
+          {/* Lane + tags — contextual: only shown once there is something to file.
+              An addition inherits them from the capture it joins. */}
+          {!isEmpty && !addMode ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div
               className="inline-flex rounded-xl border border-[var(--border)] bg-[var(--btn-soft)] p-0.5"
@@ -1672,7 +1813,35 @@ export default function CaptureWindow() {
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();
+                  if (addTarget) {
+                    setAddTarget(null);
+                    return;
+                  }
                   void closeCaptureWindow();
+                  return;
+                }
+
+                // ↑ on an empty bar adds to today's captures; in that mode ↑/↓
+                // walk through them (older/newer) while the text is one line.
+                const plainKey = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+                if (plainKey && event.key === "ArrowUp") {
+                  if (addTarget && !text.includes("\n")) {
+                    event.preventDefault();
+                    setAddTarget({
+                      ...addTarget,
+                      index: Math.min(addTarget.index + 1, addTarget.candidates.length - 1),
+                    });
+                    return;
+                  }
+                  if (!addTarget && isEmpty) {
+                    event.preventDefault();
+                    void enterAddMode();
+                    return;
+                  }
+                }
+                if (plainKey && event.key === "ArrowDown" && addTarget && !text.includes("\n")) {
+                  event.preventDefault();
+                  setAddTarget(addTarget.index === 0 ? null : { ...addTarget, index: addTarget.index - 1 });
                   return;
                 }
 
@@ -1824,7 +1993,8 @@ export default function CaptureWindow() {
             {/* Inline status chips (reminder / ambiguity) — hidden while the
                 split preview owns the routing story, since per-line times are
                 what actually ship */}
-            {!splitActive &&
+            {!addMode &&
+            !splitActive &&
             (effectivePreviewLabel || (parsed.isAmbiguous && parsed.reminderTime && !manualReminderTime)) ? (
               <div className="flex flex-wrap items-center gap-1.5 pb-2 text-[11px]">
                 {effectivePreviewLabel ? (
@@ -1863,7 +2033,7 @@ export default function CaptureWindow() {
               </div>
             ) : null}
 
-            {timerPreview ? (
+            {addMode ? null : timerPreview ? (
               <div className="smart-preview mb-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="smart-preview-dot" aria-hidden="true" />
@@ -2063,8 +2233,9 @@ export default function CaptureWindow() {
             </div>
           </div>
 
-          {/* Destinations row — appears with the routing suggestion once there is text */}
-          {!isEmpty ? (
+          {/* Destinations row — appears with the routing suggestion once there is
+              text. An addition goes wherever its capture went. */}
+          {!isEmpty && !addMode ? (
           <div className="flex shrink-0 flex-nowrap items-center gap-1" data-tour="destinations">
             <span className="codex-muted mr-0.5 shrink-0 text-[10px] font-medium uppercase tracking-[0.08em]">
               Send to
@@ -2129,7 +2300,7 @@ export default function CaptureWindow() {
           </div>
           ) : null}
 
-          {teachOffer ? (
+          {teachOffer && !addMode ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--btn-soft)] px-2.5 py-1.5 text-[11px]">
               <span className="codex-muted min-w-0">
                 Always send{" "}
@@ -2201,7 +2372,20 @@ export default function CaptureWindow() {
             </div>
           ) : null}
 
-          {isEmpty && undoStrip ? (
+          {isEmpty && !addMode && !undoStrip && addHint ? (
+            <button
+              type="button"
+              onClick={() => void enterAddMode(addHint.id)}
+              className="codex-muted flex shrink-0 items-center gap-1.5 px-1 text-left text-[11px] transition hover:text-[var(--text)]"
+            >
+              <span className="font-mono text-[10px]">↑</span>
+              <span className="min-w-0 truncate">
+                Add to “{addHint.content.split("\n")[0]?.trim()}”
+              </span>
+            </button>
+          ) : null}
+
+          {isEmpty && !addMode && undoStrip ? (
             <div className="codex-muted flex shrink-0 items-center gap-2 text-[11px]">
               <span className="min-w-0 truncate">
                 ✓ Sent{undoStrip.labels.length > 0 ? ` to ${undoStrip.labels.join(", ")}` : " (local only)"}
@@ -2221,7 +2405,7 @@ export default function CaptureWindow() {
           {!isEmpty && showHints ? (
           <div className="codex-muted flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" data-tour="shortcuts">
             <span className="flex items-center gap-1.5">
-              <span className="kbd">Enter</span> capture
+              <span className="kbd">Enter</span> {addMode ? "add" : "capture"}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="kbd">{IS_MACOS ? "⌘" : "Ctrl"}</span>
@@ -2232,7 +2416,7 @@ export default function CaptureWindow() {
               <span className="kbd">Enter</span> newline
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="kbd">Esc</span> dismiss
+              <span className="kbd">Esc</span> {addMode ? "new capture instead" : "dismiss"}
             </span>
           </div>
           ) : null}
