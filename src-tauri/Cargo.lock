@@ -631,6 +631,7 @@ dependencies = [
  "block2",
  "cpal",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "open",
  "reqwest 0.12.28",

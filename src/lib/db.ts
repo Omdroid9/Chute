@@ -486,6 +486,23 @@ export async function listCaptures(limit = 100): Promise<Capture[]> {
   return rows;
 }
 
+/** Today's captures (local day), newest first. `created_at` is stored in UTC. */
+export async function listCapturesToday(limit = 50): Promise<Capture[]> {
+  const db = await getDatabase();
+  return db.select<Capture[]>(
+    `
+      SELECT
+        ${CAPTURE_SELECT_FIELDS}
+      FROM captures
+      LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
+      WHERE DATE(captures.created_at, 'localtime') = DATE('now', 'localtime')
+      ORDER BY captures.created_at DESC
+      LIMIT $1;
+    `,
+    [limit],
+  );
+}
+
 export async function getCaptureById(id: string): Promise<Capture | null> {
   const db = await getDatabase();
   const rows = await db.select<Capture[]>(

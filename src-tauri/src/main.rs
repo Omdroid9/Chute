@@ -3,6 +3,11 @@
 
 mod commands;
 #[cfg(target_os = "macos")]
+mod landed;
+#[cfg(not(target_os = "macos"))]
+#[path = "landed_stub.rs"]
+mod landed;
+#[cfg(target_os = "macos")]
 mod mic_permission;
 #[cfg(not(target_os = "macos"))]
 #[path = "mic_permission_stub.rs"]
@@ -241,6 +246,9 @@ fn main() {
       // without Input Monitoring.
       ptt_tap::start(app.handle());
 
+      // Landed: the notch panel showing where today's captures went.
+      landed::start(app.handle());
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -272,7 +280,9 @@ fn main() {
       ptt_tap::voice_ptt_status,
       ptt_tap::open_input_monitoring_settings,
       ptt_tap::voice_retry_ptt_tap,
-      mic_permission::open_microphone_settings
+      mic_permission::open_microphone_settings,
+      landed::landed_geometry,
+      landed::landed_set_hot_rect
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

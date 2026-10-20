@@ -1,0 +1,281 @@
+/* Landed: the notch panel. Always black so it reads as part of the notch,
+   whatever the app theme. Pointer state comes from the native poller, so
+   there are no :hover rules here (a non-key window gets no DOM hover). */
+
+html[data-window="landed"],
+html[data-window="landed"] body {
+  background: transparent;
+}
+
+.landed {
+  --landed-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --landed-muted: rgba(255, 255, 255, 0.55);
+  --landed-green: #5dcaa5;
+  --landed-amber: #ef9f27;
+
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.landed-shape {
+  position: absolute;
+  top: 0;
+  background: #000;
+  border-radius: 0 0 10px 10px;
+  pointer-events: auto;
+  transition:
+    left 280ms var(--landed-ease),
+    width 280ms var(--landed-ease),
+    height 280ms var(--landed-ease),
+    border-radius 280ms var(--landed-ease),
+    opacity 160ms ease,
+    box-shadow 280ms ease;
+}
+
+/* Concave fillets so the shape flows out of the top edge like the notch. */
+.landed-shape::before,
+.landed-shape::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+
+.landed-shape::before {
+  left: -8px;
+  background: radial-gradient(circle at 0 100%, transparent 8px, #000 8.5px);
+}
+
+.landed-shape::after {
+  right: -8px;
+  background: radial-gradient(circle at 100% 100%, transparent 8px, #000 8.5px);
+}
+
+.landed-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+/* On a real notch the resting shape sits exactly on the notch; keep it
+   invisible so a sub-point mismatch can never show a black edge. */
+.landed[data-notch="real"][data-stage="idle"] .landed-shape {
+  opacity: 0;
+}
+
+.landed[data-notch="virtual"][data-stage="idle"] .landed-shape {
+  border-radius: 0 0 9px 9px;
+}
+
+.landed[data-stage="peek"] .landed-shape {
+  border-radius: 0 0 14px 14px;
+}
+
+.landed[data-stage="open"] .landed-shape {
+  border-radius: 0 0 22px 22px;
+  box-shadow: 0 18px 40px -14px rgba(0, 0, 0, 0.6);
+}
+
+.landed-glyph {
+  display: block;
+  flex: none;
+}
+
+/* Resting tab (screens without a notch). */
+.landed-tab {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.9);
+  transition: opacity 120ms ease;
+}
+
+.landed:not([data-stage="idle"]) .landed-tab {
+  opacity: 0;
+}
+
+.landed-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.landed-dot.is-failed {
+  background: var(--landed-amber);
+}
+
+.landed-dot.is-pending {
+  background: var(--landed-muted);
+}
+
+.landed-muted {
+  color: var(--landed-muted);
+}
+
+/* Peek: counts only, never capture text. */
+.landed-peek {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.landed[data-notch="real"] .landed-peek {
+  display: grid;
+  grid-template-columns: var(--ear) var(--gap) var(--ear);
+  gap: 0;
+}
+
+.landed[data-notch="real"] .landed-peek-status {
+  grid-column: 3;
+}
+
+.landed[data-stage="peek"] .landed-peek {
+  opacity: 1;
+  transition: opacity 160ms ease 90ms;
+}
+
+.landed-peek-count,
+.landed-peek-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.landed-peek-status {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Open panel. */
+.landed-panel {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  padding: 6px 12px 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.landed[data-stage="open"] .landed-panel {
+  opacity: 1;
+  transition: opacity 180ms ease 110ms;
+}
+
+.landed-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 6px 6px;
+  color: var(--landed-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.landed-head-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.landed-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landed-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  transition: background-color 120ms ease;
+}
+
+.landed-row.is-hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.landed-row.is-failed {
+  background: rgba(239, 159, 39, 0.16);
+}
+
+.landed-row.is-failed.is-hover {
+  background: rgba(239, 159, 39, 0.24);
+}
+
+.landed-row-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.landed-row-where {
+  color: var(--landed-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.landed-row.is-failed .landed-row-where {
+  color: #fac775;
+  font-weight: 500;
+}
+
+.landed-status {
+  justify-self: center;
+}
+
+.landed-status.is-landed {
+  color: var(--landed-green);
+}
+
+.landed-status.is-failed {
+  color: #fac775;
+}
+
+.landed-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.landed-status-dot.is-pending {
+  background: var(--landed-muted);
+}
+
+.landed-status-dot.is-kept {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.landed-empty,
+.landed-more {
+  margin: 0;
+  padding: 4px 8px 6px;
+  color: var(--landed-muted);
+  font-size: 12px;
+}
