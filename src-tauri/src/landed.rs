@@ -36,7 +36,7 @@ pub const LABEL: &str = "landed";
 
 /// Room for the open panel plus its shadow. Everything outside the hot rect
 /// is click-through, so a generous canvas costs nothing.
-const CANVAS_WIDTH: f64 = 440.0;
+const CANVAS_WIDTH: f64 = 520.0;
 /// The open panel grows with the day's captures up to this share of the
 /// screen's height, then scrolls.
 const CANVAS_SCREEN_SHARE: f64 = 0.62;

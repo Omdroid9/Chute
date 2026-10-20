@@ -32,7 +32,7 @@ export interface ShapeInput {
 export const EAR = 100;
 /** Ears the resting notch grows to hold the amber "needs you" dot. */
 export const ATTENTION_EAR = 16;
-export const PANEL_WIDTH = 380;
+export const PANEL_WIDTH = 460;
 /** Height of the strip the confirmation drops below the notch. */
 export const CONF_DROP = 30;
 export const TAB = { width: 46, height: 14 };

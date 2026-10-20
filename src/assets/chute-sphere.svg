@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <radialGradient id="fc-base" cx="34%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="18%" stop-color="#f3f8ff"/>
+      <stop offset="42%" stop-color="#9ec5ff"/>
+      <stop offset="68%" stop-color="#4d8ef7"/>
+      <stop offset="88%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </radialGradient>
+    <radialGradient id="fc-depth" cx="72%" cy="78%" r="48%">
+      <stop offset="0%" stop-color="#1e40af" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fc-spec" cx="28%" cy="22%" r="26%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fc-rim" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="84%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="93%" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#93c5fd" stop-opacity="0.55"/>
+    </radialGradient>
+    <linearGradient id="fc-smoke-band" x1="0" y1="64" x2="128" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="22%" stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="50%" stop-color="#f0f7ff" stop-opacity="0.2"/>
+      <stop offset="78%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="fc-orb">
+      <circle cx="64" cy="64" r="54"/>
+    </clipPath>
+    <filter id="fc-wisp" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <filter id="fc-soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <filter id="fc-smoke-noise" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.022 0.06" numOctaves="3" seed="14" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.98 0 0 0 0 0.99 0 0 0 0 1 0 0 0 0.28 0" result="whiteSmoke"/>
+      <feGaussianBlur in="whiteSmoke" stdDeviation="2.2" result="softSmoke"/>
+      <feBlend in="SourceGraphic" in2="softSmoke" mode="soft-light"/>
+    </filter>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="#60a5fa" fill-opacity="0.1" filter="url(#fc-soft)"/>
+  <g clip-path="url(#fc-orb)">
+    <circle cx="64" cy="64" r="54" fill="url(#fc-base)"/>
+    <circle cx="64" cy="64" r="54" fill="url(#fc-depth)"/>
+    <ellipse cx="76" cy="58" rx="24" ry="13" fill="#ffffff" fill-opacity="0.28" filter="url(#fc-wisp)"/>
+    <ellipse cx="50" cy="68" rx="20" ry="11" fill="#e8f2ff" fill-opacity="0.22" filter="url(#fc-wisp)"/>
+    <ellipse cx="60" cy="44" rx="16" ry="9" fill="#ffffff" fill-opacity="0.2" filter="url(#fc-wisp)"/>
+    <rect x="0" y="50" width="128" height="28" fill="url(#fc-smoke-band)" filter="url(#fc-wisp)"/>
+    <circle cx="64" cy="64" r="54" fill="#dbeafe" fill-opacity="0.18" filter="url(#fc-smoke-noise)"/>
+    <ellipse cx="44" cy="36" rx="18" ry="13" fill="#ffffff" fill-opacity="0.55" filter="url(#fc-soft)"/>
+    <circle cx="64" cy="64" r="54" fill="url(#fc-spec)"/>
+    <circle cx="64" cy="64" r="54" fill="url(#fc-rim)"/>
+  </g>
+</svg>

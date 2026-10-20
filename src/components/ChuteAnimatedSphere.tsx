@@ -33,27 +33,29 @@ export default function ChuteAnimatedSphere({
       className={`chute-logo chute-logo-animated chute-orb-realistic shrink-0 ${className}`.trim()}
     >
       <defs>
-        <radialGradient id={`${base}-base`} cx="36%" cy="30%" r="70%">
-          <stop offset="0%" stopColor="#f8fbff" />
-          <stop offset="22%" stopColor="#c8dcff" />
-          <stop offset="48%" stopColor="#6b9de8" />
-          <stop offset="74%" stopColor="#3d6fb8" />
-          <stop offset="100%" stopColor="#1e3358" />
+        {/* Same palette as the website's mark (website/public/chute-sphere.svg). */}
+        <radialGradient id={`${base}-base`} cx="34%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="18%" stopColor="#f3f8ff" />
+          <stop offset="42%" stopColor="#9ec5ff" />
+          <stop offset="68%" stopColor="#4d8ef7" />
+          <stop offset="88%" stopColor="#2563eb" />
+          <stop offset="100%" stopColor="#1e3a8a" />
         </radialGradient>
-        <radialGradient id={`${base}-depth`} cx="68%" cy="76%" r="50%">
-          <stop offset="0%" stopColor="#152a4a" stopOpacity="0.75" />
-          <stop offset="100%" stopColor="#0c1524" stopOpacity="0" />
+        <radialGradient id={`${base}-depth`} cx="72%" cy="78%" r="48%">
+          <stop offset="0%" stopColor="#1e40af" stopOpacity="0.62" />
+          <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0" />
         </radialGradient>
-        <radialGradient id={`${base}-spec`} cx="30%" cy="24%" r="24%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.88" />
-          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.2" />
+        <radialGradient id={`${base}-spec`} cx="28%" cy="22%" r="26%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.28" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
         <radialGradient id={`${base}-rim`} cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
-          <stop offset="86%" stopColor="#ffffff" stopOpacity="0" />
-          <stop offset="94%" stopColor="#ffffff" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#8eb8f0" stopOpacity="0.38" />
+          <stop offset="84%" stopColor="#ffffff" stopOpacity="0" />
+          <stop offset="93%" stopColor="#ffffff" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#93c5fd" stopOpacity="0.55" />
         </radialGradient>
         <radialGradient id={`${base}-mist`} cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#eef4ff" stopOpacity="0.15" />
@@ -90,7 +92,7 @@ export default function ChuteAnimatedSphere({
         </filter>
       </defs>
 
-      <circle cx="64" cy="64" r="57" fill="#ffffff" fillOpacity="0.04" filter={`url(#${base}-soft)`} />
+      <circle cx="64" cy="64" r="56" fill="#60a5fa" fillOpacity="0.1" filter={`url(#${base}-soft)`} />
 
       <g clipPath={`url(#${base}-orb)`}>
         <circle cx="64" cy="64" r="54" fill={`url(#${base}-base)`} />

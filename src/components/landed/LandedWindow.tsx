@@ -42,6 +42,7 @@ import {
   type Rect,
   type Stage,
 } from "./landedGeometry";
+import ChuteLogoStatic from "../ChuteLogoStatic";
 import "./landed.css";
 
 /** Pointer state polled natively: a non-key window gets no DOM hover. */
@@ -71,14 +72,9 @@ const EXPAND_DELAY_MS = 350;
 /** Room kept below the open panel for its shadow. */
 const PANEL_SHADOW_ROOM = 24;
 
-function ParachuteIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="4 4 52 52" aria-hidden className="landed-glyph">
-      <path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z" fill="currentColor" />
-      <path d="M16 27 L44 27 L34 46 L26 46 Z" fill="currentColor" />
-      <rect x="24" y="45" width="12" height="9" rx="2" fill="currentColor" />
-    </svg>
-  );
+/** Chute's mark (the website's sphere), wherever the panel stands for Chute. */
+function ChuteMark({ size }: { size: number }) {
+  return <ChuteLogoStatic size={size} className="landed-glyph" />;
 }
 
 function CheckIcon({ className = "" }: { className?: string }) {
@@ -138,7 +134,7 @@ function KindIcon({ kind, status }: { kind: LandedKind; status: LandedStatus }) 
   return (
     <span className="landed-kind" data-status={status} title={KIND_LABELS[kind]}>
       {kind === "chute" ? (
-        <ParachuteIcon size={14} />
+        <ChuteMark size={14} />
       ) : (
         <svg
           width="16"
@@ -634,14 +630,14 @@ export default function LandedWindow() {
             <span className="landed-attention-dot" aria-hidden />
           ) : (
             <div className="landed-tab">
-              <ParachuteIcon size={near ? 13 : 11} />
+              <ChuteMark size={near ? 13 : 11} />
               {attention && <span className="landed-dot is-failed" />}
             </div>
           )}
 
           <div className="landed-peek" style={peekStyle}>
             <span className="landed-peek-count">
-              <ParachuteIcon size={13} />
+              <ChuteMark size={13} />
               {counts.total} landed
             </span>
             <span className="landed-peek-status">
