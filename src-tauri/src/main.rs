@@ -2,11 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod apple_items;
-#[cfg(target_os = "macos")]
-mod capture_panel;
-#[cfg(not(target_os = "macos"))]
-#[path = "capture_panel_stub.rs"]
-mod capture_panel;
 mod commands;
 #[cfg(target_os = "macos")]
 mod landed;
@@ -15,6 +10,11 @@ mod landed;
 mod landed;
 #[cfg(target_os = "macos")]
 mod mic_permission;
+#[cfg(target_os = "macos")]
+mod panels;
+#[cfg(not(target_os = "macos"))]
+#[path = "panels_stub.rs"]
+mod panels;
 #[cfg(not(target_os = "macos"))]
 #[path = "mic_permission_stub.rs"]
 mod mic_permission;

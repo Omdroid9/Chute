@@ -5,11 +5,11 @@
 //! screen without one the frontend draws a small parachute tab instead.
 //!
 //! Three things make it safe to leave on screen all day:
-//! - **It never takes focus.** The window refuses key/main status (Tauri's
-//!   `focusable(false)`) and is marked as preventing app activation, the same
-//!   switch a non-activating `NSPanel` flips, so clicking it never pulls focus
-//!   away from the app being typed in. (Re-classing Tao's window as an
-//!   NSPanel breaks AppKit's KVO bookkeeping and crashes on dealloc.)
+//! - **It never takes focus, and shows over full-screen apps.** The window is
+//!   a non-activating `NSPanel` that refuses key/main status (see `panels`),
+//!   so clicking it never pulls focus from the app being typed in, and macOS
+//!   lets it appear over other apps' full-screen and Split View Spaces, which
+//!   it won't allow for an ordinary window of a regular app.
 //! - **It is click-through.** The canvas ignores the mouse everywhere except
 //!   the "hot rect" the frontend sets for its current shape. A main-thread
 //!   poller (same pattern as `ptt_tap`) flips `ignoresMouseEvents` as the
@@ -51,6 +51,8 @@ const NEAR_RADIUS: f64 = 120.0;
 const POLL_MS: u64 = 30;
 /// Re-read screen geometry this often (in ticks) to catch resolution changes.
 const GEOMETRY_REFRESH_TICKS: u32 = 64;
+/// Check this often (in ticks, ~2s) that the panel is still on screen.
+const VISIBILITY_CHECK_TICKS: u32 = 64;
 const KEYCODE_ESCAPE: u16 = 0x35;
 const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: u32 = 1;
 
@@ -199,8 +201,8 @@ fn ns_window_of(app: &AppHandle) -> Option<&'static NSWindow> {
 }
 
 fn configure(ns_window: &NSWindow) {
-  // What NSPanel's non-activating style does under the hood: clicks in this
-  // window never activate Chute. Private, so only if this macOS has it.
+  // Already done if the panel swap succeeded; for a plain window it at least
+  // keeps clicks from activating Chute. Private, so only if this macOS has it.
   if ns_window.respondsToSelector(sel!(_setPreventsActivation:)) {
     // Safety: AppKit's own setter, taking a BOOL; checked to exist above.
     let _: () = unsafe { msg_send![ns_window, _setPreventsActivation: true] };
@@ -275,9 +277,30 @@ fn poll_once(app: &AppHandle) {
   {
     if let Some(screen) = screen_under(mtm, mouse) {
       if place(ns_window, state, &screen) {
+        // Re-assert ordering on the new screen; moving a window across
+        // displays can leave it ordered out.
+        ns_window.orderFrontRegardless();
+        eprintln!(
+          "[landed] moved to {} ({}), visible={} on_active_space={}",
+          screen.localizedName(),
+          if state.geometry.has_notch { "notch" } else { "tab" },
+          ns_window.isVisible(),
+          ns_window.isOnActiveSpace()
+        );
         emit_geometry(app, state.geometry);
       }
     }
+  }
+
+  // Something (a Space switch, Mission Control) can order the panel out
+  // behind our back; put it back rather than vanish until relaunch.
+  if state.tick % VISIBILITY_CHECK_TICKS == 0 && (!ns_window.isVisible() || !ns_window.isOnActiveSpace()) {
+    eprintln!(
+      "[landed] was hidden (visible={} on_active_space={}), showing it again",
+      ns_window.isVisible(),
+      ns_window.isOnActiveSpace()
+    );
+    ns_window.orderFrontRegardless();
   }
 
   let local_x = mouse.x - state.frame.origin.x;
@@ -366,10 +389,14 @@ pub fn start(app: &AppHandle) {
     .focused(false)
     .visible(false)
     .build();
-  if let Err(err) = built {
-    eprintln!("[landed] could not create window: {err}");
-    return;
-  }
+  let window = match built {
+    Ok(window) => window,
+    Err(err) => {
+      eprintln!("[landed] could not create window: {err}");
+      return;
+    }
+  };
+  crate::panels::install_overlay(&window);
 
   let Some(ns_window) = ns_window_of(app) else {
     eprintln!("[landed] no native window");

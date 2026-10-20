@@ -35,7 +35,7 @@ pub fn configure_capture_window(app: &tauri::AppHandle) -> Result<(), String> {
   let _ = window.set_shadow(false);
 
   // Spotlight-style: the bar takes the keyboard without activating Chute.
-  crate::capture_panel::install(&window);
+  crate::panels::install_capture(&window);
 
   let clone = window.clone();
   window.on_window_event(move |event| {
@@ -105,7 +105,7 @@ pub fn show_capture_window(app: &tauri::AppHandle) -> Result<(), String> {
   window.show().map_err(|error| error.to_string())?;
   // Key the panel without activating Chute; activation is only a request on
   // current macOS and is often refused for a hotkey, leaving the caret behind.
-  if !crate::capture_panel::focus(&window) {
+  if !crate::panels::focus(&window) {
     window.set_focus().map_err(|error| error.to_string())?;
   }
 
@@ -283,10 +283,10 @@ pub fn quit_app(app: &tauri::AppHandle) {
   app.exit(0);
 }
 
-/// Tear down every window. The capture panel gets its original class back
-/// first, or AppKit throws during dealloc.
+/// Tear down every window. Panels get their original classes back first,
+/// or AppKit throws during dealloc.
 pub fn destroy_all_windows(app: &tauri::AppHandle) {
-  crate::capture_panel::restore(app);
+  crate::panels::restore_all(app);
   for (_, window) in app.webview_windows() {
     let _ = window.destroy();
   }
