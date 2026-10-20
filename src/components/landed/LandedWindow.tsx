@@ -15,10 +15,13 @@ import {
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
 import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
 import {
+  KIND_LABELS,
   countLanded,
+  formatWhen,
   primaryTarget,
   toLandedRow,
   type LandedCounts,
+  type LandedKind,
   type LandedRow,
   type LandedStatus,
 } from "./landedRows";
@@ -63,6 +66,8 @@ const REFRESH_MS = 60_000;
 /** A press can arrive both as a DOM event and from the poller; act once. */
 const PRESS_DEDUPE_MS = 350;
 const PRESS_DEDUPE_PX = 8;
+/** Rest on a row this long to open it up in place. */
+const EXPAND_DELAY_MS = 350;
 /** Room kept below the open panel for its shadow. */
 const PANEL_SHADOW_ROOM = 24;
 
@@ -93,10 +98,65 @@ function WarnIcon() {
   );
 }
 
-function StatusIcon({ status }: { status: LandedStatus }) {
-  if (status === "landed") return <CheckIcon />;
-  if (status === "failed") return <WarnIcon />;
-  return <span className={`landed-status landed-status-dot is-${status}`} aria-hidden />;
+const KIND_PATHS: Record<Exclude<LandedKind, "chute">, JSX.Element> = {
+  event: (
+    <>
+      <rect x="2.5" y="3.5" width="11" height="10" rx="2" />
+      <path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
+    </>
+  ),
+  reminder: (
+    <>
+      <circle cx="4.25" cy="5" r="1.6" />
+      <circle cx="4.25" cy="11" r="1.6" />
+      <path d="M7.75 5h5.75M7.75 11h5.75" />
+    </>
+  ),
+  note: (
+    <>
+      <rect x="3" y="2.5" width="10" height="11" rx="1.8" />
+      <path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" />
+    </>
+  ),
+  task: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
+      <path d="M5.3 8.2l1.9 1.9 3.6-4" />
+    </>
+  ),
+  page: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <path d="M6 10.75v-5.5l4 5.5v-5.5" />
+    </>
+  ),
+  message: <path d="M3 4.5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2V9a2 2 0 0 1-2 2H7.2L4.4 13.3V11.1A2 2 0 0 1 3 9.2z" />,
+};
+
+/** What the capture became, with its status as a dot on the corner. */
+function KindIcon({ kind, status }: { kind: LandedKind; status: LandedStatus }) {
+  return (
+    <span className="landed-kind" data-status={status} title={KIND_LABELS[kind]}>
+      {kind === "chute" ? (
+        <ParachuteIcon size={14} />
+      ) : (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          aria-hidden
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {KIND_PATHS[kind]}
+        </svg>
+      )}
+      {status !== "kept" && <span className="landed-kind-badge" data-status={status} />}
+    </span>
+  );
 }
 
 function PeekStatus({ counts }: { counts: LandedCounts }) {
@@ -140,6 +200,22 @@ export default function LandedWindow() {
   const [stage, setStage] = useState<Stage>("idle");
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const hoverRef = useRef<string | null>(null);
+  const expandTimer = useRef<number | undefined>(undefined);
+
+  /** Hover a row (or none). Resting on it opens it up after a moment; moving on closes it. */
+  const hoverRow = useCallback((id: string | null) => {
+    setHoverId(id);
+    if (id === hoverRef.current) return;
+    hoverRef.current = id;
+    window.clearTimeout(expandTimer.current);
+    expandTimer.current = undefined;
+    setExpandedId(null);
+    if (id) {
+      expandTimer.current = window.setTimeout(() => setExpandedId(id), EXPAND_DELAY_MS);
+    }
+  }, []);
   const [rows, setRows] = useState<LandedRow[]>([]);
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
@@ -201,14 +277,14 @@ export default function LandedWindow() {
     (next: Stage) => {
       stageRef.current = next;
       setStage(next);
-      if (next !== "open") setHoverId(null);
+      if (next !== "open") hoverRow(null);
       if (next !== "conf") {
         clearTimer(confTimer);
         setConfirmation(null);
       }
       if (next === "peek" || next === "open") markTipSeen();
     },
-    [markTipSeen],
+    [hoverRow, markTipSeen],
   );
 
   const close = useCallback(
@@ -371,7 +447,7 @@ export default function LandedWindow() {
 
       if (!pointer.inside) {
         clearTimer(peekTimer);
-        setHoverId(null);
+        hoverRow(null);
         suppressUntilLeave.current = false;
         if ((current === "peek" || current === "open") && closeTimer.current === undefined) {
           closeTimer.current = window.setTimeout(() => {
@@ -393,7 +469,7 @@ export default function LandedWindow() {
 
       if (current === "open") {
         const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
-        setHoverId(row?.dataset.row ?? null);
+        hoverRow(row?.dataset.row ?? null);
         return;
       }
 
@@ -448,7 +524,7 @@ export default function LandedWindow() {
       clearTimer(confTimer);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
-  }, [close, go, openPanel, press, refresh, showConfirmation]);
+  }, [close, go, hoverRow, openPanel, press, refresh, showConfirmation]);
 
   // Read the user's settings, then show the panel (it starts hidden natively).
   useEffect(() => {
@@ -489,9 +565,9 @@ export default function LandedWindow() {
     const pointer = pointerRef.current;
     if (pointer?.inside && stageRef.current === "open") {
       const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
-      setHoverId(row?.dataset.row ?? null);
+      hoverRow(row?.dataset.row ?? null);
     }
-  }, [updateListEdges]);
+  }, [hoverRow, updateListEdges]);
 
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
   const counts = countLanded(rows);
@@ -503,7 +579,7 @@ export default function LandedWindow() {
     if (!panel || !geometry) return;
     setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
     updateListEdges();
-  }, [rows, geometry, panelTop, settingsOpened, updateListEdges]);
+  }, [rows, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
 
   useLayoutEffect(() => {
     if (tipVisible && tipRef.current) setTipHeight(Math.ceil(tipRef.current.offsetHeight));
@@ -604,14 +680,37 @@ export default function LandedWindow() {
                   <li
                     key={row.id}
                     data-row={row.id}
-                    className={`landed-row is-${row.status}${hoverId === row.id ? " is-hover" : ""}`}
+                    className={[
+                      "landed-row",
+                      `is-${row.status}`,
+                      hoverId === row.id ? "is-hover" : "",
+                      expandedId === row.id ? "is-expanded" : "",
+                    ].join(" ")}
                   >
-                    <StatusIcon status={row.status} />
+                    <KindIcon kind={row.kind} status={row.status} />
                     <span className="landed-row-main">
-                      <span className="landed-row-text">{row.text}</span>
+                      {expandedId === row.id ? (
+                        <>
+                          <span className="landed-row-full">{row.fullText}</span>
+                          <span className="landed-row-meta">
+                            <span>
+                              {[KIND_LABELS[row.kind], formatWhen(row.reminderTime), row.status === "kept" ? null : row.where]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                            {row.status !== "failed" && (
+                              <span className="landed-row-add" data-action="add">
+                                Add
+                              </span>
+                            )}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="landed-row-text">{row.text}</span>
+                      )}
                       {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
                     </span>
-                    {row.status === "failed" ? (
+                    {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
                       <span className="landed-row-fix" data-action="fix">
                         {fixLabel(row, settingsOpened.has(row.id))}
                       </span>

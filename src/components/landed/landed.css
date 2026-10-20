@@ -274,7 +274,7 @@ html[data-window="landed"] body {
 
 .landed-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto 50px;
+  grid-template-columns: 18px minmax(0, 1fr) auto 50px;
   align-items: center;
   gap: 9px;
   padding: 6px 8px;
@@ -282,15 +282,98 @@ html[data-window="landed"] body {
   transition: background-color 120ms ease;
 }
 
+.landed-row {
+  /* What the icon's status dot is ringed with, to sit cleanly on the row. */
+  --row-bg: #000;
+}
+
 .landed-row.is-hover {
+  --row-bg: #141414;
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Opened up in place: the whole capture, top-aligned. */
+.landed-row.is-expanded {
+  align-items: start;
+}
+
+.landed-row.is-expanded .landed-kind,
+.landed-row.is-expanded .landed-row-time,
+.landed-row.is-expanded .landed-row-end,
+.landed-row.is-expanded .landed-row-fix {
+  margin-top: 2px;
+}
+
+.landed-row-full {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.landed-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--landed-muted);
+  font-size: 11px;
+}
+
+/* An open row's text takes the width its app name and Add were using. */
+.landed-row.is-expanded:not(.is-failed) .landed-row-main {
+  grid-column: 2 / 4;
+}
+
+.landed-kind {
+  position: relative;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.landed-kind[data-status="failed"] {
+  color: #fac775;
+}
+
+.landed-kind-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--row-bg);
+}
+
+.landed-kind-badge[data-status="landed"] {
+  background: var(--landed-green);
+}
+
+.landed-kind-badge[data-status="pending"] {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.landed-kind-badge[data-status="failed"] {
+  background: var(--landed-amber);
+}
+
 .landed-row.is-failed {
+  --row-bg: #261906;
   background: rgba(239, 159, 39, 0.16);
 }
 
 .landed-row.is-failed.is-hover {
+  --row-bg: #3a2709;
   background: rgba(239, 159, 39, 0.24);
 }
 
