@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { parseReminderSyntax } from "../lib/parser";
@@ -36,13 +36,17 @@ import { noteContentFromSplit, splitCaptureLines } from "../lib/splitCapture";
 import { recurrenceLabelFromRule } from "../lib/recurrence";
 import {
   getVoiceModelStatus,
+  getVoicePttStatus,
   startVoice,
   stopVoice,
   downloadVoiceModel,
   subscribeVoice,
   downloadPercent,
+  retryVoicePttTap,
+  openMicrophoneSettings,
   type VoiceState,
   type VoiceModelState,
+  type VoicePttStatus,
 } from "../lib/voice";
 import { useAppStore } from "../store/useAppStore";
 import TagChip from "./TagChip";
@@ -356,6 +360,10 @@ export default function CaptureWindow() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceModel, setVoiceModel] = useState<VoiceModelState>("ready");
   const [voiceDownloadPct, setVoiceDownloadPct] = useState(0);
+  const [voicePttStatus, setVoicePttStatus] = useState<VoicePttStatus>("unavailable");
+  const [voicePttBusy, setVoicePttBusy] = useState(false);
+  const micHoldActiveRef = useRef(false);
+  const rightCmdHoldRef = useRef(false);
   const [showProductTour, setShowProductTour] = useState(false);
   const [destinationPrompt, setDestinationPrompt] = useState<{
     keepOpen: boolean;
@@ -369,8 +377,21 @@ export default function CaptureWindow() {
   // Voice capture: subscribe to backend events. Transcripts (from either the
   // push-to-talk hotkey or the mic button) flow into the box like typed text.
   useEffect(() => {
+    let active = true;
     let unlisten: (() => void) | undefined;
-    void getVoiceModelStatus().then(setVoiceModel);
+    void getVoiceModelStatus().then((status) => {
+      if (active) {
+        setVoiceModel(status);
+      }
+    });
+    void getVoicePttStatus().then((status) => {
+      if (active) {
+        setVoicePttStatus(status);
+      }
+    });
+    // Do NOT auto-retry the tap on every mount — after granting Input
+    // Monitoring, macOS requires a full Quit/reopen; in-process retry just
+    // keeps showing the same prompt.
     void subscribeVoice({
       onState: setVoiceState,
       onTranscript: (transcript) => {
@@ -388,6 +409,9 @@ export default function CaptureWindow() {
         if (/install/i.test(message)) {
           setVoiceModel("needs-model");
         }
+        if (/input monitoring/i.test(message)) {
+          setVoicePttStatus("needs-input-monitoring");
+        }
         setSaveError(message);
         setVoiceState("idle");
       },
@@ -401,28 +425,114 @@ export default function CaptureWindow() {
         setVoiceModel("needs-model");
         setSaveError(message);
       },
+      onPttStatus: setVoicePttStatus,
     }).then((dispose) => {
+      if (!active) {
+        dispose();
+        return;
+      }
       unlisten = dispose;
     });
-    return () => unlisten?.();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, []);
 
-  function onMicClick() {
+  function onMicPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) {
+      return;
+    }
     if (voiceModel === "needs-model") {
       setVoiceModel("downloading");
       setVoiceDownloadPct(0);
       void downloadVoiceModel();
       return;
     }
-    if (voiceModel !== "ready") {
+    if (voiceModel !== "ready" || voiceState !== "idle") {
       return;
     }
-    if (voiceState === "recording") {
-      void stopVoice();
-    } else if (voiceState === "idle") {
-      void startVoice();
-    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    micHoldActiveRef.current = true;
+    void startVoice().catch((error) => {
+      micHoldActiveRef.current = false;
+      setSaveError(error instanceof Error ? error.message : String(error));
+      setVoiceState("idle");
+    });
   }
+
+  function onMicPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+    if (!micHoldActiveRef.current) {
+      return;
+    }
+    micHoldActiveRef.current = false;
+    void stopVoice();
+  }
+
+  // When the capture overlay is focused, Right ⌘ is delivered to the webview
+  // reliably. Native poller covers the global (other-app-focused) case.
+  // Keep this effect mount-stable so keyup is never dropped mid-hold.
+  const voiceModelRef = useRef(voiceModel);
+  const voiceStateRef = useRef(voiceState);
+  voiceModelRef.current = voiceModel;
+  voiceStateRef.current = voiceState;
+
+  useEffect(() => {
+    function canStartVoicePtt() {
+      return (
+        voiceModelRef.current === "ready" &&
+        voiceStateRef.current === "idle" &&
+        !micHoldActiveRef.current
+      );
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== "MetaRight" || event.repeat) {
+        return;
+      }
+      if (event.shiftKey || event.altKey || event.ctrlKey) {
+        return;
+      }
+      if (!canStartVoicePtt() || rightCmdHoldRef.current) {
+        return;
+      }
+      rightCmdHoldRef.current = true;
+      void startVoice().catch((error) => {
+        rightCmdHoldRef.current = false;
+        setSaveError(error instanceof Error ? error.message : String(error));
+        setVoiceState("idle");
+      });
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.code !== "MetaRight" || !rightCmdHoldRef.current) {
+        return;
+      }
+      rightCmdHoldRef.current = false;
+      void stopVoice();
+    }
+
+    function onBlur() {
+      if (!rightCmdHoldRef.current) {
+        return;
+      }
+      rightCmdHoldRef.current = false;
+      void stopVoice();
+    }
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
   const hydratedRef = useRef(false);
 
   const { selectedTag, setSelectedTag, setCapturesToday, lastSyncLabel, theme, setTheme } =
@@ -1918,7 +2028,9 @@ export default function CaptureWindow() {
                 ) : null}
                 <button
                   type="button"
-                  onClick={onMicClick}
+                  onPointerDown={onMicPointerDown}
+                  onPointerUp={onMicPointerUp}
+                  onPointerCancel={onMicPointerUp}
                   disabled={voiceState === "transcribing" || voiceModel === "downloading"}
                   className={[
                     "icon-btn",
@@ -1930,8 +2042,8 @@ export default function CaptureWindow() {
                       : voiceModel === "downloading"
                         ? "Downloading voice model…"
                         : voiceState === "recording"
-                          ? "Stop and transcribe"
-                          : "Voice capture (or hold ⌘⇧V)"
+                          ? "Release to transcribe"
+                          : "Hold to talk (or hold Right ⌘)"
                   }
                   aria-label="Voice capture"
                 >
@@ -2045,8 +2157,48 @@ export default function CaptureWindow() {
             </div>
           ) : null}
 
+          {IS_MACOS &&
+          (voicePttStatus === "needs-input-monitoring" ||
+            voicePttStatus === "needs-relaunch" ||
+            voicePttStatus === "unavailable") ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px] text-amber-500">
+              <span>Right ⌘ isn’t active — use the mic button, or Retry.</span>
+              <button
+                type="button"
+                disabled={voicePttBusy}
+                className="codex-btn rounded-md px-2 py-0.5 text-[11px] font-semibold disabled:opacity-50"
+                onClick={() => {
+                  void (async () => {
+                    setVoicePttBusy(true);
+                    try {
+                      setVoicePttStatus(await retryVoicePttTap());
+                      setSaveError(null);
+                    } finally {
+                      setVoicePttBusy(false);
+                    }
+                  })();
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+
           {saveError ? (
-            <span className="shrink-0 text-xs text-red-400">{saveError}</span>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-red-400">
+              <span>{saveError}</span>
+              {/microphone/i.test(saveError) ? (
+                <button
+                  type="button"
+                  className="codex-btn rounded-md px-2 py-0.5 text-[11px] font-semibold text-[var(--text)]"
+                  onClick={() => {
+                    void openMicrophoneSettings();
+                  }}
+                >
+                  Open Settings
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           {isEmpty && undoStrip ? (

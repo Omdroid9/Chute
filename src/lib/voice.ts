@@ -9,6 +9,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export type VoiceState = "idle" | "recording" | "transcribing";
 /** UI-facing model state; the backend only reports ready / needs-model. */
 export type VoiceModelState = "ready" | "needs-model" | "downloading";
+/** Right ⌘ tap status (macOS Input Monitoring). */
+export type VoicePttStatus =
+  | "ready"
+  | "needs-input-monitoring"
+  | "needs-relaunch"
+  | "unavailable";
 
 export async function getVoiceModelStatus(): Promise<VoiceModelState> {
   try {
@@ -16,6 +22,25 @@ export async function getVoiceModelStatus(): Promise<VoiceModelState> {
     return status === "ready" ? "ready" : "needs-model";
   } catch {
     return "needs-model";
+  }
+}
+
+export function parseVoicePttStatus(raw: string): VoicePttStatus {
+  if (
+    raw === "ready" ||
+    raw === "needs-input-monitoring" ||
+    raw === "needs-relaunch"
+  ) {
+    return raw;
+  }
+  return "unavailable";
+}
+
+export async function getVoicePttStatus(): Promise<VoicePttStatus> {
+  try {
+    return parseVoicePttStatus(await invoke<string>("voice_ptt_status"));
+  } catch {
+    return "unavailable";
   }
 }
 
@@ -31,6 +56,18 @@ export function downloadVoiceModel(): Promise<void> {
   return invoke("voice_download_model");
 }
 
+export function openInputMonitoringSettings(): Promise<void> {
+  return invoke("open_input_monitoring_settings");
+}
+
+export function openMicrophoneSettings(): Promise<void> {
+  return invoke("open_microphone_settings");
+}
+
+export function retryVoicePttTap(): Promise<VoicePttStatus> {
+  return invoke<string>("voice_retry_ptt_tap").then((status) => parseVoicePttStatus(status));
+}
+
 export interface VoiceHandlers {
   onState?: (state: VoiceState) => void;
   onTranscript?: (text: string) => void;
@@ -38,6 +75,7 @@ export interface VoiceHandlers {
   onModelProgress?: (downloaded: number, total: number) => void;
   onModelDone?: () => void;
   onModelError?: (message: string) => void;
+  onPttStatus?: (status: VoicePttStatus) => void;
 }
 
 /** Subscribe to all voice events. Returns a single unlisten that detaches all. */
@@ -71,6 +109,11 @@ export async function subscribeVoice(handlers: VoiceHandlers): Promise<UnlistenF
   unlisteners.push(
     await listen<{ message: string }>("chute://voice-model-error", (event) =>
       handlers.onModelError?.(event.payload.message),
+    ),
+  );
+  unlisteners.push(
+    await listen<{ status: string }>("chute://voice-ptt-status", (event) =>
+      handlers.onPttStatus?.(parseVoicePttStatus(event.payload.status)),
     ),
   );
 

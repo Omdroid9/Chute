@@ -28,3 +28,9 @@ tauri-plugin-process = "2"
 cpal = "0.18"
 whisper-rs = "0.16"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Needed to trigger the real Microphone TCC prompt (cpal alone stays silent).
+objc2 = "0.6"
+objc2-foundation = "0.3"
+block2 = "0.6"

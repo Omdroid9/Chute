@@ -628,7 +628,10 @@ dependencies = [
 name = "chute"
 version = "0.2.3"
 dependencies = [
+ "block2",
  "cpal",
+ "objc2",
+ "objc2-foundation",
  "open",
  "reqwest 0.12.28",
  "serde",

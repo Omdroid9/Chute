@@ -25,6 +25,11 @@ import { testAppleReminders } from "../lib/sync/appleRemindersSync";
 import { testSlackWebhook } from "../lib/sync/slack";
 import { runSyncPass } from "../lib/sync/syncManager";
 import { isMacOS } from "../lib/platform";
+import {
+  getVoicePttStatus,
+  retryVoicePttTap,
+  type VoicePttStatus,
+} from "../lib/voice";
 import { useAppStore } from "../store/useAppStore";
 import ChuteLogo from "./ChuteLogo";
 import type { RoutingRule, ThemeMode } from "../types";
@@ -109,6 +114,8 @@ export default function SettingsPanel() {
   const [hotkeyDraft, setHotkeyDraft] = useState(hotkey);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [themeDraft, setThemeDraft] = useState<ThemeMode>(theme);
+  const [voicePttStatus, setVoicePttStatus] = useState<VoicePttStatus>("unavailable");
+  const [voicePttBusy, setVoicePttBusy] = useState(false);
 
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
   const [agentEnabled, setAgentEnabled] = useState(true);
@@ -235,6 +242,13 @@ export default function SettingsPanel() {
   useEffect(() => {
     void loadSettings().catch(console.error);
   }, [loadSettings]);
+
+  useEffect(() => {
+    if (!isMacOS()) {
+      return;
+    }
+    void getVoicePttStatus().then(setVoicePttStatus).catch(() => setVoicePttStatus("unavailable"));
+  }, []);
 
   async function saveGeneralSettings() {
     setBusyAction("save-general");
@@ -508,6 +522,49 @@ export default function SettingsPanel() {
             className="codex-input w-full rounded-lg px-3 py-2 text-sm outline-none"
           />
         </label>
+
+        {isMacOS() ? (
+          <div className="mb-3 rounded-lg border border-[var(--border)] px-3 py-2.5">
+            <div className="text-sm">Voice capture</div>
+            <div className="codex-muted mt-0.5 text-[11px]">
+              Hold Right ⌘ to talk, release to fill the capture box. Left ⌘ stays
+              normal for Copy/Paste. The mic button works without this.
+            </div>
+            {voicePttStatus === "ready" ? (
+              <div className="mt-2 text-[11px] text-[var(--muted)]">
+                Hold Right ⌘ to talk. No Input Monitoring needed.
+              </div>
+            ) : voicePttStatus === "needs-relaunch" ||
+              voicePttStatus === "needs-input-monitoring" ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-amber-500">
+                  Right ⌘ isn’t active yet — click Retry, or Quit and reopen Chute.
+                </span>
+                <button
+                  type="button"
+                  disabled={voicePttBusy}
+                  className="codex-btn rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50"
+                  onClick={() => {
+                    void (async () => {
+                      setVoicePttBusy(true);
+                      try {
+                        setVoicePttStatus(await retryVoicePttTap());
+                      } finally {
+                        setVoicePttBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-[var(--muted)]">
+                Push-to-talk unavailable — use the mic button in capture.
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <label className="mb-3 flex items-center justify-between text-sm">
           Launch at login

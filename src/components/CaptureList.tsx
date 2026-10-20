@@ -79,6 +79,7 @@ function enabledDestinationLabels(destinations: CaptureDestinations): string {
   if (destinations.googleCalendar) labels.push("Google Calendar");
   if (destinations.appleReminders) labels.push("Apple Notes");
   if (destinations.reminders) labels.push("Reminders");
+  if (destinations.appleCalendar) labels.push("Apple Calendar");
   return labels.length > 0 ? labels.join(", ") : "None";
 }
 

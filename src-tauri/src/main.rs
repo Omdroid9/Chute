@@ -2,6 +2,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+#[cfg(target_os = "macos")]
+mod mic_permission;
+#[cfg(not(target_os = "macos"))]
+#[path = "mic_permission_stub.rs"]
+mod mic_permission;
+#[cfg(target_os = "macos")]
+mod ptt_tap;
+#[cfg(not(target_os = "macos"))]
+#[path = "ptt_tap_stub.rs"]
+mod ptt_tap;
 mod voice;
 mod window;
 
@@ -32,8 +42,6 @@ pub struct AppState {
   pub capture_raise_guard: Mutex<Option<std::time::Instant>>,
   /// Active Chute-native countdown timers, keyed by id.
   pub timers: Mutex<std::collections::HashMap<String, commands::TimerEntry>>,
-  /// Push-to-talk voice hotkey (hold to record, release to transcribe).
-  pub ptt_hotkey: Mutex<String>,
   /// On-device voice capture + transcription state.
   pub voice: voice::VoiceState,
 }
@@ -51,14 +59,6 @@ pub fn default_library_hotkey() -> &'static str {
     "CommandOrControl+Shift+L"
   } else {
     "Ctrl+Shift+L"
-  }
-}
-
-pub fn default_ptt_hotkey() -> &'static str {
-  if cfg!(target_os = "macos") {
-    "CommandOrControl+Shift+V"
-  } else {
-    "Ctrl+Shift+V"
   }
 }
 
@@ -125,7 +125,6 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn main() {
   let initial_hotkey = default_hotkey().to_string();
   let initial_library_hotkey = default_library_hotkey().to_string();
-  let initial_ptt_hotkey = default_ptt_hotkey().to_string();
 
   tauri::Builder::default()
     .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -137,26 +136,13 @@ fn main() {
       main_view: Mutex::new(MainView::Capture),
       capture_raise_guard: Mutex::new(None),
       timers: Mutex::new(std::collections::HashMap::new()),
-      ptt_hotkey: Mutex::new(initial_ptt_hotkey.clone()),
       voice: voice::VoiceState::new(),
     })
     .plugin(
       tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, shortcut, event| {
-          // Push-to-talk needs both press (start recording) and release
-          // (stop + transcribe), so it's handled before the Pressed-only gate.
-          let ptt_hotkey = app
-            .try_state::<AppState>()
-            .and_then(|state| state.ptt_hotkey.lock().ok().map(|guard| guard.clone()))
-            .and_then(|s| s.parse::<Shortcut>().ok());
-          if ptt_hotkey.as_ref() == Some(shortcut) {
-            match event.state() {
-              ShortcutState::Pressed => voice::ptt_pressed(app),
-              ShortcutState::Released => voice::ptt_released(app),
-            }
-            return;
-          }
-
+          // Voice PTT is hold-Right-⌘ via a native CGEventTap (see ptt_tap.rs),
+          // not a global-shortcut chord — Left ⌘ stays free for Copy/Paste.
           if event.state() != ShortcutState::Pressed {
             return;
           }
@@ -251,29 +237,10 @@ fn main() {
         }
       }
 
-      // Push-to-talk voice hotkey: hold to record, release to transcribe.
-      // Best-effort like the library hotkey — the in-bar mic button still works.
-      match initial_ptt_hotkey.parse::<Shortcut>() {
-        Ok(ptt_shortcut) => {
-          if let Err(error) = app.global_shortcut().register(ptt_shortcut) {
-            eprintln!(
-              "Push-to-talk hotkey '{}' could not be registered: {} (mic button still works)",
-              initial_ptt_hotkey, error
-            );
-            if let Some(state) = app.try_state::<AppState>() {
-              if let Ok(mut current) = state.ptt_hotkey.lock() {
-                current.clear();
-              }
-            }
-          }
-        }
-        Err(error) => {
-          eprintln!(
-            "Push-to-talk hotkey '{}' could not be parsed: {}",
-            initial_ptt_hotkey, error
-          );
-        }
-      }
+      // Hold Right ⌘ for voice (native event tap). Mic button still works
+      // without Input Monitoring.
+      ptt_tap::start(app.handle());
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -300,7 +267,12 @@ fn main() {
       voice::voice_start,
       voice::voice_stop,
       voice::voice_model_status,
-      voice::voice_download_model
+      voice::voice_download_model,
+      voice::voice_debug_transcribe_wav,
+      ptt_tap::voice_ptt_status,
+      ptt_tap::open_input_monitoring_settings,
+      ptt_tap::voice_retry_ptt_tap,
+      mic_permission::open_microphone_settings
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
