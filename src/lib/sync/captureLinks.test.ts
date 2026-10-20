@@ -83,6 +83,7 @@ describe("syncCapture links", () => {
       { appleCalendarEnabled: true },
     );
     expect(result.appleCalendarSynced).toBe(false);
+    expect(result.attempted).toEqual(["apple_calendar"]);
     expect(result.links).toEqual([]);
   });
 

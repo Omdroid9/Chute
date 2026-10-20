@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requiresSync, type SyncConfig } from "./syncEngine";
+import { pendingDestinations, requiresSync, type SyncConfig } from "./syncEngine";
 import type { Capture } from "../../types";
 
 function makeCapture(overrides: Partial<Capture> = {}): Capture {
@@ -82,5 +82,24 @@ describe("requiresSync", () => {
     const capture = makeCapture({ target_apple_reminders: 1 });
     expect(requiresSync(capture, { appleNotesEnabled: false })).toBe(false);
     expect(requiresSync(capture, { appleNotesEnabled: true })).toBe(true);
+  });
+});
+
+describe("pendingDestinations", () => {
+  it("lists what a pass would send, in display order, skipping what already landed", () => {
+    const capture = makeCapture({
+      target_slack: 1,
+      target_notion: 1,
+      synced_notion: 1,
+      target_apple_reminders: 1,
+      target_google_calendar: 1,
+      reminder_time: "2026-06-05T09:00:00",
+    });
+    expect(pendingDestinations(capture, FULL_CONFIG)).toEqual(["apple_notes", "google_calendar", "slack"]);
+  });
+
+  it("never sends an untimed capture to a calendar", () => {
+    const capture = makeCapture({ target_google_calendar: 1 });
+    expect(pendingDestinations(capture, FULL_CONFIG)).toEqual([]);
   });
 });

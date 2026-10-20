@@ -49,6 +49,7 @@ const SETTING_KEYS = [
   "hotkey",
   "theme",
   "launch_at_login",
+  "landed_enabled",
   "agent_enabled",
   "agent_auto_apply_threshold",
   "agent_daily_llm_limit",
@@ -113,6 +114,7 @@ export default function SettingsPanel() {
 
   const [hotkeyDraft, setHotkeyDraft] = useState(hotkey);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
+  const [landedEnabled, setLandedEnabled] = useState(true);
   const [themeDraft, setThemeDraft] = useState<ThemeMode>(theme);
   const [voicePttStatus, setVoicePttStatus] = useState<VoicePttStatus>("unavailable");
   const [voicePttBusy, setVoicePttBusy] = useState(false);
@@ -198,6 +200,7 @@ export default function SettingsPanel() {
       setThemeDraft(saved.theme);
     }
     setLaunchAtLogin(saved.launch_at_login === "true");
+    setLandedEnabled(saved.landed_enabled !== "false");
     setAgentEnabled((saved.agent_enabled ?? "true") !== "false");
     setAgentAutoApplyThreshold(saved.agent_auto_apply_threshold ?? "0.88");
     setAgentDailyLlmLimit(saved.agent_daily_llm_limit ?? "200");
@@ -260,7 +263,11 @@ export default function SettingsPanel() {
         setSetting("hotkey", hotkeyDraft.trim()),
         setSetting("theme", themeDraft),
         setSetting("launch_at_login", launchAtLogin ? "true" : "false"),
+        setSetting("landed_enabled", landedEnabled ? "true" : "false"),
       ]);
+      if (isMacOS()) {
+        await invoke("landed_set_enabled", { enabled: landedEnabled });
+      }
 
       setHotkey(hotkeyDraft.trim());
       setTheme(themeDraft);
@@ -574,6 +581,22 @@ export default function SettingsPanel() {
             onChange={(event) => setLaunchAtLogin(event.currentTarget.checked)}
           />
         </label>
+
+        {isMacOS() ? (
+          <label className="mb-3 flex items-center justify-between gap-3 text-sm">
+            <span className="min-w-0">
+              <span className="block">Landed at the notch</span>
+              <span className="codex-muted block text-[11px]">
+                Rest on the notch to see where today’s captures went. Other screens get a small tab.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={landedEnabled}
+              onChange={(event) => setLandedEnabled(event.currentTarget.checked)}
+            />
+          </label>
+        ) : null}
 
         <label className="mb-4 block">
           <span className="codex-muted mb-1 block text-xs">Theme</span>

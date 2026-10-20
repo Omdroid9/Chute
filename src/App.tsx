@@ -244,7 +244,8 @@ function App() {
     async function syncNow() {
       try {
         const [{ lastSyncLabel: nextLastSync }, todayCount] = await Promise.all([
-          runSyncPass(),
+          // Tell the Landed panel each time a capture lands (or doesn't).
+          runSyncPass({ onCaptureSynced: (outcome) => void emit("chute://capture-synced", outcome) }),
           getCapturesTodayCount(),
         ]);
 

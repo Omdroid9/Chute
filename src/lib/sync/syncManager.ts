@@ -14,7 +14,14 @@ import type { Capture } from "../../types";
 import { isMacOS } from "../platform";
 import { nextRecurrenceAfter, recurrenceLabelFromRule, toLocalIso } from "../recurrence";
 import { createAppleReminder } from "./appleRemindersSync";
-import { requiresSync, syncCapture, type SyncConfig } from "./syncEngine";
+import type { SyncDestination } from "./destinations";
+import {
+  pendingDestinations,
+  requiresSync,
+  syncCapture,
+  type SyncConfig,
+  type SyncResult,
+} from "./syncEngine";
 
 const SYNC_SETTING_KEYS = [
   "integration_backend_url",
@@ -70,59 +77,26 @@ export async function loadSyncConfig(): Promise<SyncConfig> {
   };
 }
 
-function countExpectedSyncTargets(capture: Capture, config: SyncConfig): number {
-  let expected = 0;
+/** Destinations a sync result landed in, in display order. */
+function landedDestinations(result: SyncResult): SyncDestination[] {
+  const landed: Record<SyncDestination, boolean> = {
+    slack: result.slackSynced,
+    discord: result.discordSynced,
+    notion: result.notionSynced,
+    google_tasks: result.googleSynced,
+    google_calendar: result.googleCalendarSynced,
+    apple_notes: result.appleRemindersSynced,
+    reminders: result.remindersSynced,
+    apple_calendar: result.appleCalendarSynced,
+  };
+  return result.attempted.filter((destination) => landed[destination]);
+}
 
-  if (config.slackWebhookUrl && capture.target_slack === 1 && capture.synced_slack === 0) {
-    expected += 1;
-  }
-  if (config.discordWebhookUrl && capture.target_discord === 1 && capture.synced_discord === 0) {
-    expected += 1;
-  }
-  if (config.notionToken && config.notionPageId && capture.target_notion === 1 && capture.synced_notion === 0) {
-    expected += 1;
-  }
-  if (
-    config.googleTasksAccessToken &&
-    config.googleTasksListId &&
-    capture.target_google_tasks === 1 &&
-    capture.synced_google_tasks === 0
-  ) {
-    expected += 1;
-  }
-  if (
-    config.googleTasksAccessToken &&
-    config.googleCalendarId &&
-    capture.target_google_calendar === 1 &&
-    capture.synced_google_calendar === 0 &&
-    capture.reminder_time
-  ) {
-    expected += 1;
-  }
-  if (
-    config.appleNotesEnabled &&
-    capture.target_apple_reminders === 1 &&
-    capture.synced_apple_reminders === 0
-  ) {
-    expected += 1;
-  }
-  if (
-    config.appleRemindersEnabled &&
-    capture.target_reminders === 1 &&
-    capture.synced_reminders === 0
-  ) {
-    expected += 1;
-  }
-  if (
-    config.appleCalendarEnabled &&
-    capture.target_apple_calendar === 1 &&
-    capture.synced_apple_calendar === 0 &&
-    capture.reminder_time
-  ) {
-    expected += 1;
-  }
-
-  return expected;
+/** What one capture's sync did, for the Landed confirmation. */
+export interface CaptureSyncOutcome {
+  captureId: string;
+  landed: SyncDestination[];
+  failed: SyncDestination[];
 }
 
 function toDisplayTime(input: Date): string {
@@ -164,6 +138,8 @@ export async function getLastSyncLabel(): Promise<string> {
 export async function runSyncPass(options?: {
   captureId?: string;
   limit?: number;
+  /** Called after each capture this pass tried to send. */
+  onCaptureSynced?: (outcome: CaptureSyncOutcome) => void;
 }): Promise<{
   stats: SyncRunStats;
   lastSyncLabel: string;
@@ -184,7 +160,7 @@ export async function runSyncPass(options?: {
   };
 
   for (const capture of pending) {
-    const expectedTargets = countExpectedSyncTargets(capture, config);
+    const expectedTargets = pendingDestinations(capture, config).length;
     if (expectedTargets === 0) {
       continue;
     }
@@ -258,6 +234,13 @@ export async function runSyncPass(options?: {
       // Everything that was attempted this pass succeeded; clear the stale error.
       await setCaptureSyncError(capture.id, null);
     }
+
+    const landed = landedDestinations(result);
+    options?.onCaptureSynced?.({
+      captureId: capture.id,
+      landed,
+      failed: result.attempted.filter((destination) => !landed.includes(destination)),
+    });
   }
 
   let lastSyncLabel = await getLastSyncLabel();

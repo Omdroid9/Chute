@@ -69,9 +69,27 @@ html[data-window="landed"] body {
 }
 
 /* On a real notch the resting shape sits exactly on the notch; keep it
-   invisible so a sub-point mismatch can never show a black edge. */
-.landed[data-notch="real"][data-stage="idle"] .landed-shape {
+   invisible so a sub-point mismatch can never show a black edge. When
+   something needs attention it grows small ears to hold the amber dot. */
+.landed[data-notch="real"][data-stage="idle"]:not([data-attention]) .landed-shape {
   opacity: 0;
+}
+
+.landed-attention-dot {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--landed-amber);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.landed[data-stage="idle"][data-attention] .landed-attention-dot {
+  opacity: 1;
 }
 
 .landed[data-notch="virtual"][data-stage="idle"] .landed-shape {
@@ -80,6 +98,10 @@ html[data-window="landed"] body {
 
 .landed[data-stage="peek"] .landed-shape {
   border-radius: 0 0 14px 14px;
+}
+
+.landed[data-stage="conf"] .landed-shape {
+  border-radius: 0 0 16px 16px;
 }
 
 .landed[data-stage="open"] .landed-shape {
@@ -170,6 +192,38 @@ html[data-window="landed"] body {
   color: rgba(255, 255, 255, 0.78);
 }
 
+/* Confirmation: drops below the notch (pixels behind it don't exist), or
+   fills the pill on screens without one. */
+.landed-conf {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.landed[data-stage="conf"] .landed-conf {
+  opacity: 1;
+  transition: opacity 160ms ease 110ms;
+}
+
+.landed-conf-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.landed-conf[data-tone="fail"] .landed-conf-text {
+  color: #fac775;
+}
+
 /* Open panel. */
 .landed-panel {
   position: absolute;
@@ -228,11 +282,40 @@ html[data-window="landed"] body {
   background: rgba(239, 159, 39, 0.24);
 }
 
+.landed-row-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .landed-row-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12.5px;
+}
+
+.landed-row-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(250, 199, 117, 0.85);
+  font-size: 11px;
+}
+
+.landed-row-fix {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(250, 199, 117, 0.16);
+  color: #fac775;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.landed-row.is-hover .landed-row-fix {
+  background: rgba(250, 199, 117, 0.26);
 }
 
 .landed-row-where {
@@ -272,10 +355,61 @@ html[data-window="landed"] body {
   background: rgba(255, 255, 255, 0.25);
 }
 
+.landed-more {
+  text-align: center;
+}
+
 .landed-empty,
 .landed-more {
   margin: 0;
   padding: 4px 8px 6px;
   color: var(--landed-muted);
   font-size: 12px;
+}
+
+/* One-time tip under the tab, on screens without a notch. */
+.landed-tip {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 10px 12px 11px;
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(22, 22, 24, 0.96);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+.landed-tip::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-left: 0.5px solid rgba(255, 255, 255, 0.14);
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.landed-tip-title {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.landed-tip-body {
+  margin: 0 0 9px;
+  color: var(--landed-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.landed-tip-ok {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 11.5px;
+  font-weight: 600;
 }

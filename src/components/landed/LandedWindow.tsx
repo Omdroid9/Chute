@@ -1,27 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { listCapturesToday } from "../../lib/db";
-import { countLanded, toLandedRow, type LandedCounts, type LandedRow, type LandedStatus } from "./landedRows";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getCaptureLinksFor, getSetting, listCapturesToday, setCaptureSyncError, setSetting } from "../../lib/db";
+import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
+import { DESTINATION_LABELS } from "../../lib/sync/destinations";
+import {
+  countLanded,
+  describeDestinations,
+  primaryTarget,
+  toLandedRow,
+  type LandedCounts,
+  type LandedRow,
+  type LandedStatus,
+} from "./landedRows";
+import { openTarget } from "./landedActions";
+import {
+  CONF_DROP,
+  CONF_PILL,
+  EAR,
+  PANEL_WIDTH,
+  PILL,
+  contains,
+  hotRectFor,
+  restingHotRect,
+  shapeFor,
+  tipRect,
+  type Geometry,
+  type Rect,
+  type Stage,
+} from "./landedGeometry";
 import "./landed.css";
-
-type Stage = "idle" | "peek" | "open";
-
-interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** Canvas geometry from the native side, in points (top-left origin). */
-interface Geometry {
-  width: number;
-  height: number;
-  /** The real notch, or where the tab rests on screens without one. */
-  notch: Rect;
-  hasNotch: boolean;
-}
 
 /** Pointer state polled natively: a non-key window gets no DOM hover. */
 interface Pointer {
@@ -32,47 +40,20 @@ interface Pointer {
   y: number;
 }
 
+interface Confirmation {
+  tone: "ok" | "fail";
+  text: string;
+}
+
 /** Rest this long on the notch before it peeks; brushing past does nothing. */
 const PEEK_DELAY_MS = 300;
-const CLOSE_GRACE_MS: Record<Exclude<Stage, "idle">, number> = { peek: 250, open: 450 };
+const CLOSE_GRACE_MS = { peek: 250, open: 450 };
+const CONF_MS = { ok: 2200, fail: 3200 };
 const REFRESH_MS = 60_000;
-/** Width of each "ear" the peek adds beside the real notch. */
-const EAR = 100;
-const PANEL_WIDTH = 380;
-const TAB = { width: 46, height: 14 };
-const TAB_NEAR = { width: 64, height: 18 };
-const PILL = { width: 250, height: 30 };
+/** A press can arrive both as a DOM event and from the poller; act once. */
+const PRESS_DEDUPE_MS = 350;
+const PRESS_DEDUPE_PX = 8;
 const MAX_ROWS = 6;
-
-function centred(geometry: Geometry, width: number, height: number): Rect {
-  const centre = geometry.notch.x + geometry.notch.width / 2;
-  return { x: centre - width / 2, y: 0, width, height };
-}
-
-function shapeFor(stage: Stage, geometry: Geometry, near: boolean, panelHeight: number): Rect {
-  const { notch, hasNotch } = geometry;
-  if (stage === "open") return centred(geometry, PANEL_WIDTH, panelHeight);
-  if (stage === "peek") {
-    return hasNotch
-      ? centred(geometry, notch.width + EAR * 2, notch.height)
-      : centred(geometry, PILL.width, PILL.height);
-  }
-  if (hasNotch) return { ...notch };
-  return near ? centred(geometry, TAB_NEAR.width, TAB_NEAR.height) : centred(geometry, TAB.width, TAB.height);
-}
-
-/** The clickable part of the canvas; everything else passes clicks through. */
-function hotRectFor(stage: Stage, geometry: Geometry, panelHeight: number): Rect {
-  // At rest, use the tab's approach size so the target doesn't move as it grows.
-  const shape = shapeFor(stage, geometry, true, panelHeight);
-  const pad = stage === "idle" ? 6 : 4;
-  return {
-    x: shape.x - pad,
-    y: 0,
-    width: shape.width + pad * 2,
-    height: shape.height + (stage === "idle" && geometry.hasNotch ? 0 : 4),
-  };
-}
 
 function ParachuteIcon({ size }: { size: number }) {
   return (
@@ -84,22 +65,26 @@ function ParachuteIcon({ size }: { size: number }) {
   );
 }
 
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden className={`landed-status is-landed ${className}`}>
+      <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function WarnIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden className="landed-status is-failed">
+      <path d="M8 2.5l6 10.5H2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8 6.5v3M8 11.4v.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function StatusIcon({ status }: { status: LandedStatus }) {
-  if (status === "landed") {
-    return (
-      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden className="landed-status is-landed">
-        <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-  if (status === "failed") {
-    return (
-      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden className="landed-status is-failed">
-        <path d="M8 2.5l6 10.5H2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M8 6.5v3M8 11.4v.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    );
-  }
+  if (status === "landed") return <CheckIcon />;
+  if (status === "failed") return <WarnIcon />;
   return <span className={`landed-status landed-status-dot is-${status}`} aria-hidden />;
 }
 
@@ -123,12 +108,18 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
   if (counts.total > 0) {
     return (
       <>
-        <StatusIcon status="landed" />
+        <CheckIcon />
         All in
       </>
     );
   }
   return <span className="landed-muted">Nothing yet</span>;
+}
+
+function fixLabel(row: LandedRow, settingsOpened: boolean): string {
+  if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
+  if (row.problem?.kind === "reconnect") return "Fix";
+  return "Retry";
 }
 
 export default function LandedWindow() {
@@ -137,39 +128,187 @@ export default function LandedWindow() {
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [rows, setRows] = useState<LandedRow[]>([]);
+  const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
+  const [tipHeight, setTipHeight] = useState(96);
+  // null until the setting is read, so the tip never flashes for people who've seen it.
+  const [tipSeen, setTipSeen] = useState<boolean | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  // Permission rows whose Fix already opened System Settings: next click retries.
+  const [settingsOpened, setSettingsOpened] = useState<ReadonlySet<string>>(new Set());
+
   const panelRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage>("idle");
   const pointerRef = useRef<Pointer | null>(null);
+  const rowsRef = useRef<LandedRow[]>([]);
+  const notionPageIdRef = useRef<string | undefined>(undefined);
+  const settingsOpenedRef = useRef<ReadonlySet<string>>(settingsOpened);
+  const tipSeenRef = useRef<boolean | null>(null);
+  const restingRef = useRef<Rect | null>(null);
   const peekTimer = useRef<number | undefined>(undefined);
   const closeTimer = useRef<number | undefined>(undefined);
+  const confTimer = useRef<number | undefined>(undefined);
+  const refreshSeq = useRef(0);
+  const lastPress = useRef({ time: -Infinity, x: 0, y: 0 });
+  /** How the panel was opened: from the menu bar icon it waits for the pointer to arrive. */
+  const openedBy = useRef<"pointer" | "tray">("pointer");
+  const pointerArrived = useRef(true);
+  /** After a dismissal, don't peek again until the pointer has left. */
+  const suppressUntilLeave = useRef(false);
+  /** Captures whose failure was already announced; background retries stay quiet. */
+  const announcedFailures = useRef(new Set<string>());
 
-  const go = useCallback((next: Stage) => {
-    stageRef.current = next;
-    setStage(next);
-    if (next !== "open") setHoverId(null);
+  // Event handlers are subscribed once; they read the latest state from refs.
+  useLayoutEffect(() => {
+    rowsRef.current = rows;
+    notionPageIdRef.current = notionPageId;
+    settingsOpenedRef.current = settingsOpened;
+    tipSeenRef.current = tipSeen;
+  }, [rows, notionPageId, settingsOpened, tipSeen]);
+
+  const clearTimer = (timer: { current: number | undefined }) => {
+    window.clearTimeout(timer.current);
+    timer.current = undefined;
+  };
+
+  const markTipSeen = useCallback(() => {
+    if (tipSeenRef.current !== false) return;
+    tipSeenRef.current = true;
+    setTipSeen(true);
+    void setSetting("landed_tip_seen", "true").catch((error) =>
+      console.error("Landed: could not save the tip state", error),
+    );
   }, []);
 
-  const clearTimers = useCallback(() => {
-    window.clearTimeout(peekTimer.current);
-    window.clearTimeout(closeTimer.current);
-    peekTimer.current = undefined;
-    closeTimer.current = undefined;
-  }, []);
+  const go = useCallback(
+    (next: Stage) => {
+      stageRef.current = next;
+      setStage(next);
+      if (next !== "open") setHoverId(null);
+      if (next !== "conf") {
+        clearTimer(confTimer);
+        setConfirmation(null);
+      }
+      if (next === "peek" || next === "open") markTipSeen();
+    },
+    [markTipSeen],
+  );
 
-  const open = useCallback(() => {
-    clearTimers();
-    go("open");
-  }, [clearTimers, go]);
+  const close = useCallback(
+    (suppress: boolean) => {
+      clearTimer(peekTimer);
+      clearTimer(closeTimer);
+      if (suppress) suppressUntilLeave.current = true;
+      go("idle");
+    },
+    [go],
+  );
+
+  const openPanel = useCallback(
+    (by: "pointer" | "tray") => {
+      clearTimer(peekTimer);
+      clearTimer(closeTimer);
+      openedBy.current = by;
+      pointerArrived.current = by === "pointer";
+      go("open");
+    },
+    [go],
+  );
 
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     try {
-      const captures = await listCapturesToday(50);
-      setRows(captures.map(toLandedRow));
+      const [captures, config] = await Promise.all([listCapturesToday(50), loadSyncConfig()]);
+      const links = await getCaptureLinksFor(captures.map((capture) => capture.id));
+      if (seq !== refreshSeq.current) return;
+      setRows(captures.map((capture) => toLandedRow(capture, config, links.get(capture.id) ?? [])));
+      setNotionPageId(config.notionPageId);
     } catch (error) {
       console.error("Landed: could not load today's captures", error);
     }
   }, []);
+
+  const fix = useCallback(
+    async (row: LandedRow) => {
+      const problem = row.problem;
+      try {
+        if (problem?.kind === "permission" && !settingsOpenedRef.current.has(row.id)) {
+          setSettingsOpened((current) => new Set(current).add(row.id));
+          await invoke("open_automation_settings");
+          close(true);
+          return;
+        }
+        if (problem?.kind === "reconnect") {
+          await invoke("open_settings_window");
+          close(true);
+          return;
+        }
+        // Clear the error so the row reads as on its way, then ask for a sync.
+        await setCaptureSyncError(row.id, null);
+        announcedFailures.current.delete(row.id);
+        await emit("chute://request-sync");
+        await refresh();
+      } catch (error) {
+        console.error("Landed: fix failed", error);
+      }
+    },
+    [close, refresh],
+  );
+
+  /** One press on the canvas at (x, y), from either the DOM or the poller. */
+  const press = useCallback(
+    (x: number, y: number) => {
+      const now = performance.now();
+      const last = lastPress.current;
+      if (now - last.time < PRESS_DEDUPE_MS && Math.hypot(x - last.x, y - last.y) < PRESS_DEDUPE_PX) return;
+      lastPress.current = { time: now, x, y };
+      const element = document.elementFromPoint(x, y);
+      if (!element) return;
+
+      const action = element.closest<HTMLElement>("[data-action]")?.dataset.action;
+      const rowId = element.closest<HTMLElement>("[data-row]")?.dataset.row;
+      const row = rowsRef.current.find((candidate) => candidate.id === rowId);
+
+      if (action === "tip-ok") {
+        markTipSeen();
+        return;
+      }
+      if (action === "fix" && row) {
+        void fix(row);
+        return;
+      }
+      if (action === "library") {
+        void invoke("show_library_window").catch((error) => console.error("Landed: no Library", error));
+        close(true);
+        return;
+      }
+      if (row) {
+        void openTarget(row, primaryTarget(row), notionPageIdRef.current).catch((error) =>
+          console.error("Landed: could not open the capture", error),
+        );
+        close(true);
+        return;
+      }
+      if (element.closest(".landed-shape") && stageRef.current !== "open") {
+        openPanel("pointer");
+      }
+    },
+    [close, fix, markTipSeen, openPanel],
+  );
+
+  const showConfirmation = useCallback(
+    (next: Confirmation) => {
+      clearTimer(confTimer);
+      go("conf");
+      setConfirmation(next);
+      confTimer.current = window.setTimeout(() => {
+        confTimer.current = undefined;
+        if (stageRef.current === "conf") go("idle");
+      }, CONF_MS[next.tone]);
+    },
+    [go],
+  );
 
   useEffect(() => {
     const onPointer = (pointer: Pointer) => {
@@ -177,12 +316,24 @@ export default function LandedWindow() {
       pointerRef.current = pointer;
       setNear(pointer.near);
       const current = stageRef.current;
+      const pressed = pointer.buttons && !previous?.buttons;
+
+      // Opened from the menu bar: stay open until the pointer arrives, and
+      // close on a click anywhere else.
+      if (current === "open" && !pointerArrived.current) {
+        if (pointer.inside) {
+          pointerArrived.current = true;
+        } else {
+          if (pressed) close(false);
+          return;
+        }
+      }
 
       if (!pointer.inside) {
-        window.clearTimeout(peekTimer.current);
-        peekTimer.current = undefined;
+        clearTimer(peekTimer);
         setHoverId(null);
-        if (current !== "idle" && closeTimer.current === undefined) {
+        suppressUntilLeave.current = false;
+        if ((current === "peek" || current === "open") && closeTimer.current === undefined) {
           closeTimer.current = window.setTimeout(() => {
             closeTimer.current = undefined;
             go("idle");
@@ -191,13 +342,12 @@ export default function LandedWindow() {
         return;
       }
 
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = undefined;
+      clearTimer(closeTimer);
 
       // A press that starts on the shape is a click, even if WebKit drops it
       // (the window is never key).
-      if (pointer.buttons && previous?.inside && !previous.buttons && current !== "open") {
-        open();
+      if (pressed && previous?.inside) {
+        press(pointer.x, pointer.y);
         return;
       }
 
@@ -207,11 +357,12 @@ export default function LandedWindow() {
         return;
       }
 
-      // Never trigger mid-drag: only a still pointer with no button held peeks.
+      // Peek only for a still pointer on the notch itself (not the tip), with
+      // no button held (never mid-drag), and not right after a dismissal.
       if (current === "idle") {
-        if (pointer.buttons) {
-          window.clearTimeout(peekTimer.current);
-          peekTimer.current = undefined;
+        const onNotch = restingRef.current ? contains(restingRef.current, pointer.x, pointer.y) : false;
+        if (pointer.buttons || !onNotch || suppressUntilLeave.current) {
+          clearTimer(peekTimer);
         } else if (peekTimer.current === undefined) {
           peekTimer.current = window.setTimeout(() => {
             peekTimer.current = undefined;
@@ -222,23 +373,60 @@ export default function LandedWindow() {
       }
     };
 
+    const onSynced = (outcome: CaptureSyncOutcome) => {
+      void refresh();
+      if (stageRef.current !== "idle") return;
+      if (outcome.landed.length > 0) {
+        announcedFailures.current.delete(outcome.captureId);
+        showConfirmation({ tone: "ok", text: `Landed in ${describeDestinations(outcome.landed)}` });
+      } else if (outcome.failed.length > 0 && !announcedFailures.current.has(outcome.captureId)) {
+        announcedFailures.current.add(outcome.captureId);
+        showConfirmation({ tone: "fail", text: `${DESTINATION_LABELS[outcome.failed[0]]} needs you` });
+      }
+    };
+
     const unlisteners = [
       listen<Pointer>("landed://pointer", (event) => onPointer(event.payload)),
       listen<Geometry>("landed://geometry", (event) => setGeometry(event.payload)),
-      listen("landed://escape", () => {
-        clearTimers();
-        go("idle");
+      listen("landed://escape", () => close(true)),
+      listen("landed://open", () => {
+        if (stageRef.current === "open") close(false);
+        else openPanel("tray");
       }),
+      listen<CaptureSyncOutcome>("chute://capture-synced", (event) => onSynced(event.payload)),
+      listen("chute://request-sync", () => void refresh()),
+      listen("chute://captures-changed", () => void refresh()),
     ];
     invoke<Geometry>("landed_geometry")
       .then(setGeometry)
       .catch((error) => console.error("Landed: no geometry", error));
 
     return () => {
-      clearTimers();
+      clearTimer(peekTimer);
+      clearTimer(closeTimer);
+      clearTimer(confTimer);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
-  }, [clearTimers, go, open]);
+  }, [close, go, openPanel, press, refresh, showConfirmation]);
+
+  // Read the user's settings, then show the panel (it starts hidden natively).
+  useEffect(() => {
+    void (async () => {
+      let enabled = true;
+      try {
+        const [savedEnabled, savedTip] = await Promise.all([
+          getSetting("landed_enabled"),
+          getSetting("landed_tip_seen"),
+        ]);
+        enabled = savedEnabled !== "false";
+        tipSeenRef.current = savedTip === "true";
+        setTipSeen(savedTip === "true");
+      } catch (error) {
+        console.error("Landed: could not read settings", error);
+      }
+      await invoke("landed_set_enabled", { enabled });
+    })().catch((error) => console.error("Landed: could not enable", error));
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -247,38 +435,57 @@ export default function LandedWindow() {
   }, [refresh]);
 
   useEffect(() => {
-    if (stage !== "idle") void refresh();
+    if (stage === "peek" || stage === "open") void refresh();
   }, [stage, refresh]);
 
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
+  const counts = countLanded(rows);
+  const attention = counts.failed > 0;
+  const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
     if (!panel || !geometry) return;
     setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - 24));
-  }, [rows, geometry, panelTop]);
+  }, [rows, geometry, panelTop, settingsOpened]);
+
+  useLayoutEffect(() => {
+    if (tipVisible && tipRef.current) setTipHeight(Math.ceil(tipRef.current.offsetHeight));
+  }, [tipVisible]);
+
+  useLayoutEffect(() => {
+    restingRef.current = geometry ? restingHotRect(geometry, attention) : null;
+  }, [geometry, attention]);
 
   useEffect(() => {
     if (!geometry) return;
-    const hot = hotRectFor(stage, geometry, panelHeight);
+    const hot = hotRectFor({
+      stage,
+      geometry,
+      near: true,
+      attention,
+      panelHeight,
+      tip: tipVisible ? tipRect(geometry, tipHeight) : null,
+    });
     void invoke("landed_set_hot_rect", { ...hot, expanded: stage !== "idle" }).catch((error) =>
       console.error("Landed: could not set hot rect", error),
     );
-  }, [geometry, stage, panelHeight]);
+  }, [geometry, stage, panelHeight, attention, tipVisible, tipHeight]);
 
   if (!geometry) return null;
 
-  const counts = countLanded(rows);
-  const shape = shapeFor(stage, geometry, near, panelHeight);
-  const peekWidth = geometry.hasNotch ? geometry.notch.width + EAR * 2 : PILL.width;
-  const peekHeight = geometry.hasNotch ? geometry.notch.height : PILL.height;
+  const shape = shapeFor({ stage, geometry, near, attention, panelHeight });
   const shapeStyle: CSSProperties = { left: shape.x, width: shape.width, height: shape.height };
   const peekStyle = {
-    width: peekWidth,
-    height: peekHeight,
+    width: geometry.hasNotch ? geometry.notch.width + EAR * 2 : PILL.width,
+    height: geometry.hasNotch ? geometry.notch.height : PILL.height,
     "--ear": `${EAR}px`,
     "--gap": `${geometry.notch.width}px`,
   } as CSSProperties;
+  const confStyle: CSSProperties = geometry.hasNotch
+    ? { top: geometry.notch.height, height: CONF_DROP, width: geometry.notch.width + EAR * 2 }
+    : { top: 0, height: CONF_PILL.height, width: CONF_PILL.width };
+  const tip = tipVisible ? tipRect(geometry, tipHeight) : null;
 
   return (
     <div
@@ -286,13 +493,17 @@ export default function LandedWindow() {
       data-stage={stage}
       data-notch={geometry.hasNotch ? "real" : "virtual"}
       data-near={near ? "" : undefined}
+      data-attention={attention ? "" : undefined}
+      onMouseDown={(event) => press(event.clientX, event.clientY)}
     >
-      <div className="landed-shape" style={shapeStyle} onMouseDown={stage === "open" ? undefined : open}>
+      <div className="landed-shape" style={shapeStyle}>
         <div className="landed-clip">
-          {!geometry.hasNotch && (
+          {geometry.hasNotch ? (
+            <span className="landed-attention-dot" aria-hidden />
+          ) : (
             <div className="landed-tab">
               <ParachuteIcon size={near ? 13 : 11} />
-              {near && counts.failed > 0 && <span className="landed-dot is-failed" />}
+              {attention && <span className="landed-dot is-failed" />}
             </div>
           )}
 
@@ -304,6 +515,11 @@ export default function LandedWindow() {
             <span className="landed-peek-status">
               <PeekStatus counts={counts} />
             </span>
+          </div>
+
+          <div className="landed-conf" style={confStyle} data-tone={confirmation?.tone}>
+            {confirmation?.tone === "fail" ? <WarnIcon /> : <CheckIcon />}
+            <span className="landed-conf-text">{confirmation?.text}</span>
           </div>
 
           <div className="landed-panel" style={{ top: panelTop, width: PANEL_WIDTH }} ref={panelRef}>
@@ -322,18 +538,44 @@ export default function LandedWindow() {
                     className={`landed-row is-${row.status}${hoverId === row.id ? " is-hover" : ""}`}
                   >
                     <StatusIcon status={row.status} />
-                    <span className="landed-row-text">{row.text}</span>
-                    <span className="landed-row-where">{row.status === "failed" ? "Fix" : row.where}</span>
+                    <span className="landed-row-main">
+                      <span className="landed-row-text">{row.text}</span>
+                      {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+                    </span>
+                    {row.status === "failed" ? (
+                      <span className="landed-row-fix" data-action="fix">
+                        {fixLabel(row, settingsOpened.has(row.id))}
+                      </span>
+                    ) : (
+                      <span className="landed-row-where">{row.where}</span>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
             {rows.length > MAX_ROWS && (
-              <p className="landed-more">+{rows.length - MAX_ROWS} more in the Library</p>
+              <p className="landed-more" data-action="library">
+                +{rows.length - MAX_ROWS} more in the Library
+              </p>
             )}
           </div>
         </div>
       </div>
+
+      {tip && (
+        <div
+          className="landed-tip"
+          ref={tipRef}
+          style={{ left: tip.x, top: tip.y, width: tip.width }}
+          role="note"
+        >
+          <p className="landed-tip-title">Your captures land here</p>
+          <p className="landed-tip-body">Rest here to peek, click to open. Brushing past does nothing.</p>
+          <span className="landed-tip-ok" data-action="tip-ok">
+            Got it
+          </span>
+        </div>
+      )}
     </div>
   );
 }

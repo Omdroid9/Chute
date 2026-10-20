@@ -1,6 +1,22 @@
-import type { Capture } from "../../types";
+import type { Capture, CaptureLink } from "../../types";
+import {
+  DESTINATION_LABELS,
+  isSynced,
+  targetedDestinations,
+  type SyncDestination,
+} from "../../lib/sync/destinations";
+import { describeSyncError, type SyncProblem } from "../../lib/sync/syncErrors";
+import { destinationReady, type SyncConfig } from "../../lib/sync/syncEngine";
 
 export type LandedStatus = "landed" | "pending" | "failed" | "kept";
+
+export interface LandedTarget {
+  destination: SyncDestination;
+  label: string;
+  synced: boolean;
+  /** The created item, when Chute kept its id. */
+  link: CaptureLink | null;
+}
 
 export interface LandedRow {
   id: string;
@@ -8,6 +24,10 @@ export interface LandedRow {
   /** Where it went, e.g. "Reminders" or "Notes + Slack". */
   where: string;
   status: LandedStatus;
+  /** Destinations Chute can actually send to (connected, and timed for calendars). */
+  targets: LandedTarget[];
+  problem: SyncProblem | null;
+  reminderTime: string | null;
 }
 
 export interface LandedCounts {
@@ -16,31 +36,45 @@ export interface LandedCounts {
   pending: number;
 }
 
-// `target_apple_reminders` / `synced_apple_reminders` are Apple Notes (legacy
-// column names); `target_reminders` is the Reminders app.
-const DESTINATIONS: Array<[label: string, target: keyof Capture, synced: keyof Capture]> = [
-  ["Reminders", "target_reminders", "synced_reminders"],
-  ["Calendar", "target_apple_calendar", "synced_apple_calendar"],
-  ["Notes", "target_apple_reminders", "synced_apple_reminders"],
-  ["Google Calendar", "target_google_calendar", "synced_google_calendar"],
-  ["Google Tasks", "target_google_tasks", "synced_google_tasks"],
-  ["Notion", "target_notion", "synced_notion"],
-  ["Slack", "target_slack", "synced_slack"],
-  ["Discord", "target_discord", "synced_discord"],
-];
+/** "Reminders", "Notes + Slack", "Reminders +2". */
+export function describeDestinations(destinations: SyncDestination[]): string {
+  const labels = destinations.map((destination) => DESTINATION_LABELS[destination]);
+  return labels.length > 2 ? `${labels[0]} +${labels.length - 1}` : labels.join(" + ");
+}
 
-export function toLandedRow(capture: Capture): LandedRow {
-  const targets = DESTINATIONS.filter(([, target]) => Boolean(capture[target]));
+export function toLandedRow(capture: Capture, config: SyncConfig, links: CaptureLink[] = []): LandedRow {
   const text = capture.content.replace(/\s+/g, " ").trim();
+  // A destination that isn't connected was never going to be sent to, so the
+  // capture simply stayed in Chute as far as that app is concerned.
+  const targets: LandedTarget[] = targetedDestinations(capture)
+    .filter((destination) => destinationReady(capture, destination, config))
+    .map((destination) => ({
+      destination,
+      label: DESTINATION_LABELS[destination],
+      synced: isSynced(capture, destination),
+      link: links.find((link) => link.destination === destination) ?? null,
+    }));
+
+  const base = { id: capture.id, text, reminderTime: capture.reminder_time };
   if (targets.length === 0) {
-    return { id: capture.id, text, where: "Chute", status: "kept" };
+    return { ...base, where: "Chute", status: "kept", targets, problem: null };
   }
-  const allSynced = targets.every(([, , synced]) => Boolean(capture[synced]));
-  const status: LandedStatus = allSynced ? "landed" : capture.last_sync_error ? "failed" : "pending";
-  const where = targets.length > 2
-    ? `${targets[0][0]} +${targets.length - 1}`
-    : targets.map(([label]) => label).join(" + ");
-  return { id: capture.id, text, where, status };
+
+  const problem = describeSyncError(capture.last_sync_error);
+  const allSynced = targets.every((target) => target.synced);
+  const status: LandedStatus = allSynced ? "landed" : problem ? "failed" : "pending";
+  return {
+    ...base,
+    where: describeDestinations(targets.map((target) => target.destination)),
+    status,
+    targets,
+    problem: status === "failed" ? problem : null,
+  };
+}
+
+/** What a click on the row opens: the first place it landed, else the first target. */
+export function primaryTarget(row: LandedRow): LandedTarget | null {
+  return row.targets.find((target) => target.synced) ?? row.targets[0] ?? null;
 }
 
 export function countLanded(rows: LandedRow[]): LandedCounts {

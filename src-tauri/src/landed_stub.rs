@@ -30,3 +30,10 @@ pub fn landed_geometry() -> Geometry {
 
 #[tauri::command]
 pub fn landed_set_hot_rect(_x: f64, _y: f64, _width: f64, _height: f64, _expanded: bool) {}
+
+#[tauri::command]
+pub fn landed_set_enabled(_app: AppHandle, _enabled: bool) {}
+
+pub fn open_from_tray(_app: &AppHandle) -> bool {
+  false
+}

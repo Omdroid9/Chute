@@ -635,8 +635,6 @@ export async function getTotalCaptureCount(): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
-/** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,
- * so the agent job row is removed explicitly. */
 /** Remember where a capture landed. A later sync to the same app replaces the old link. */
 export async function saveCaptureLinks(captureId: string, links: CaptureLink[]): Promise<void> {
   if (links.length === 0) return;
@@ -665,6 +663,32 @@ export async function getCaptureLinks(captureId: string): Promise<CaptureLink[]>
   return rows.map((row) => ({ destination: row.destination, externalId: row.external_id, kind: row.kind }));
 }
 
+/** Links for many captures at once, keyed by capture id. */
+export async function getCaptureLinksFor(captureIds: string[]): Promise<Map<string, CaptureLink[]>> {
+  const byCapture = new Map<string, CaptureLink[]>();
+  if (captureIds.length === 0) return byCapture;
+  const db = await getDatabase();
+  const placeholders = captureIds.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await db.select<
+    Array<{ capture_id: string; destination: LinkDestination; external_id: string; kind: string | null }>
+  >(
+    `
+      SELECT capture_id, destination, external_id, kind
+      FROM capture_links
+      WHERE capture_id IN (${placeholders});
+    `,
+    captureIds,
+  );
+  for (const row of rows) {
+    const links = byCapture.get(row.capture_id) ?? [];
+    links.push({ destination: row.destination, externalId: row.external_id, kind: row.kind });
+    byCapture.set(row.capture_id, links);
+  }
+  return byCapture;
+}
+
+/** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,
+ * so the agent job and link rows are removed explicitly. */
 export async function deleteCapture(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM agent_jobs WHERE capture_id = $1;`, [id]);

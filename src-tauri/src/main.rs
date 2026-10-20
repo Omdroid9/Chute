@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod apple_items;
 #[cfg(target_os = "macos")]
 mod capture_panel;
 #[cfg(not(target_os = "macos"))]
@@ -117,7 +118,11 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         ..
       } = event
       {
-        let _ = window::show_capture_window(&tray.app_handle());
+        // Same panel as the notch; the capture bar if Landed is turned off.
+        let app = tray.app_handle();
+        if !landed::open_from_tray(app) {
+          let _ = window::show_capture_window(app);
+        }
       }
     });
 
@@ -287,7 +292,10 @@ fn main() {
       ptt_tap::voice_retry_ptt_tap,
       mic_permission::open_microphone_settings,
       landed::landed_geometry,
-      landed::landed_set_hot_rect
+      landed::landed_set_hot_rect,
+      landed::landed_set_enabled,
+      apple_items::open_in_apple_app,
+      apple_items::open_automation_settings
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
-import { countLanded, toLandedRow } from "./landedRows";
+import type { SyncConfig } from "../../lib/sync/syncEngine";
+import { countLanded, describeDestinations, primaryTarget, toLandedRow } from "./landedRows";
+
+const CONFIG: SyncConfig = {
+  slackWebhookUrl: "https://hooks.slack.com/services/x",
+  notionToken: "secret_x",
+  notionPageId: "page_x",
+  appleNotesEnabled: true,
+  appleRemindersEnabled: true,
+  appleCalendarEnabled: true,
+};
 
 function makeCapture(overrides: Partial<Capture> = {}): Capture {
   return {
@@ -37,14 +47,16 @@ function makeCapture(overrides: Partial<Capture> = {}): Capture {
 
 describe("toLandedRow", () => {
   it("is landed once every destination synced, on one line", () => {
-    const row = toLandedRow(makeCapture({ target_reminders: 1, synced_reminders: 1 }));
-    expect(row).toEqual({ id: "c1", text: "call mom tomorrow at 5pm", where: "Reminders", status: "landed" });
+    const row = toLandedRow(makeCapture({ target_reminders: 1, synced_reminders: 1 }), CONFIG, [
+      { destination: "reminders", externalId: "x-apple-reminder://r1" },
+    ]);
+    expect(row).toMatchObject({ text: "call mom tomorrow at 5pm", where: "Reminders", status: "landed" });
+    expect(row.targets[0].link?.externalId).toBe("x-apple-reminder://r1");
   });
 
   it("names the legacy apple_reminders columns as Notes", () => {
-    const row = toLandedRow(makeCapture({ target_apple_reminders: 1 }));
-    expect(row.where).toBe("Notes");
-    expect(row.status).toBe("pending");
+    const row = toLandedRow(makeCapture({ target_apple_reminders: 1 }), CONFIG);
+    expect(row).toMatchObject({ where: "Notes", status: "pending" });
   });
 
   it("needs attention when a destination is unsynced and an error was recorded", () => {
@@ -53,28 +65,62 @@ describe("toLandedRow", () => {
         target_apple_calendar: 1,
         target_slack: 1,
         synced_slack: 1,
-        last_sync_error: "Calendar: -1743",
+        reminder_time: "2026-10-20T16:00:00",
+        last_sync_error: "Apple Calendar: Not authorized to send Apple events to Calendar. (-1743)",
       }),
+      CONFIG,
     );
     expect(row).toMatchObject({ where: "Calendar + Slack", status: "failed" });
+    expect(row.problem).toEqual({
+      kind: "permission",
+      app: "Calendar",
+      message: "Chute needs permission to use Calendar",
+    });
   });
 
-  it("shortens three or more destinations", () => {
-    const row = toLandedRow(makeCapture({ target_reminders: 1, target_notion: 1, target_slack: 1 }));
-    expect(row.where).toBe("Reminders +2");
+  it("treats destinations that aren't connected as kept in Chute", () => {
+    // Discord isn't configured, and an untimed capture never goes to a calendar.
+    const row = toLandedRow(makeCapture({ target_discord: 1, target_apple_calendar: 1 }), CONFIG);
+    expect(row).toMatchObject({ where: "Chute", status: "kept", targets: [] });
   });
 
-  it("keeps captures with no destination in Chute", () => {
-    expect(toLandedRow(makeCapture()).status).toBe("kept");
+  it("drops a stale error once everything landed", () => {
+    const row = toLandedRow(
+      makeCapture({ target_slack: 1, synced_slack: 1, last_sync_error: "Slack: HTTP 500: oops" }),
+      CONFIG,
+    );
+    expect(row.status).toBe("landed");
+    expect(row.problem).toBeNull();
+  });
+});
+
+describe("primaryTarget", () => {
+  it("opens the first place the capture landed", () => {
+    const row = toLandedRow(
+      makeCapture({ target_reminders: 1, target_notion: 1, synced_notion: 1 }),
+      CONFIG,
+    );
+    expect(primaryTarget(row)?.destination).toBe("notion");
+  });
+
+  it("has nothing to open for captures kept in Chute", () => {
+    expect(primaryTarget(toLandedRow(makeCapture(), CONFIG))).toBeNull();
+  });
+});
+
+describe("describeDestinations", () => {
+  it("joins two and shortens three or more", () => {
+    expect(describeDestinations(["apple_notes", "slack"])).toBe("Notes + Slack");
+    expect(describeDestinations(["reminders", "notion", "slack"])).toBe("Reminders +2");
   });
 });
 
 describe("countLanded", () => {
   it("counts failures and pending rows", () => {
     const rows = [
-      toLandedRow(makeCapture({ id: "a", target_slack: 1, synced_slack: 1 })),
-      toLandedRow(makeCapture({ id: "b", target_slack: 1, last_sync_error: "x" })),
-      toLandedRow(makeCapture({ id: "c", target_slack: 1 })),
+      toLandedRow(makeCapture({ id: "a", target_slack: 1, synced_slack: 1 }), CONFIG),
+      toLandedRow(makeCapture({ id: "b", target_slack: 1, last_sync_error: "Slack: HTTP 500" }), CONFIG),
+      toLandedRow(makeCapture({ id: "c", target_slack: 1 }), CONFIG),
     ];
     expect(countLanded(rows)).toEqual({ total: 3, failed: 1, pending: 1 });
   });

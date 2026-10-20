@@ -11,6 +11,7 @@ import { createGoogleTask, refreshGoogleAccessToken } from "./googleTasks";
 import { appendNotionCapture } from "./notion";
 import { sendSlackCapture } from "./slack";
 import { recurrenceLabelFromRule } from "../recurrence";
+import { isSynced, isTargeted, SYNC_DESTINATIONS, type SyncDestination } from "./destinations";
 
 export interface SyncConfig {
   slackWebhookUrl?: string;
@@ -42,6 +43,8 @@ export interface SyncResult {
   appleRemindersSynced: boolean;
   remindersSynced: boolean;
   appleCalendarSynced: boolean;
+  /** Destinations this pass tried (succeeded or not). */
+  attempted: SyncDestination[];
   /** Links for every destination that succeeded this pass and returned an id. */
   links: CaptureLink[];
   errors: string[];
@@ -83,41 +86,41 @@ async function runWithRetry(
   return { ok: false, error: lastError ? toErrorMessage(lastError) : "Unknown sync error" };
 }
 
-function shouldSyncSlack(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(config.slackWebhookUrl && capture.target_slack === 1 && capture.synced_slack === 0);
+/**
+ * Whether Chute can send to this destination at all: the app is connected,
+ * and calendars only take captures that have a time (otherwise every untimed
+ * note would become a "now + 30 min" event).
+ */
+export function destinationReady(
+  capture: Capture,
+  destination: SyncDestination,
+  config: SyncConfig,
+): boolean {
+  switch (destination) {
+    case "slack":
+      return Boolean(config.slackWebhookUrl);
+    case "discord":
+      return Boolean(config.discordWebhookUrl);
+    case "notion":
+      return Boolean(config.notionToken && config.notionPageId);
+    case "google_tasks":
+      return Boolean(config.googleTasksAccessToken && config.googleTasksListId);
+    case "google_calendar":
+      return Boolean(config.googleTasksAccessToken && config.googleCalendarId && capture.reminder_time);
+    case "apple_notes":
+      return Boolean(config.appleNotesEnabled);
+    case "reminders":
+      return Boolean(config.appleRemindersEnabled);
+    case "apple_calendar":
+      return Boolean(config.appleCalendarEnabled && capture.reminder_time);
+  }
 }
 
-function shouldSyncDiscord(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(config.discordWebhookUrl && capture.target_discord === 1 && capture.synced_discord === 0);
-}
-
-function shouldSyncNotion(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.notionToken &&
-      config.notionPageId &&
-      capture.target_notion === 1 &&
-      capture.synced_notion === 0,
-  );
-}
-
-function shouldSyncGoogle(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.googleTasksAccessToken &&
-      config.googleTasksListId &&
-      capture.target_google_tasks === 1 &&
-      capture.synced_google_tasks === 0,
-  );
-}
-
-function shouldSyncGoogleCalendar(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.googleTasksAccessToken &&
-      config.googleCalendarId &&
-      capture.target_google_calendar === 1 &&
-      capture.synced_google_calendar === 0 &&
-      // Only create a calendar event when the capture has an actual time.
-      // Otherwise every untimed note becomes a "now + 30 min" event.
-      capture.reminder_time,
+function shouldSync(capture: Capture, destination: SyncDestination, config: SyncConfig): boolean {
+  return (
+    isTargeted(capture, destination) &&
+    !isSynced(capture, destination) &&
+    destinationReady(capture, destination, config)
   );
 }
 
@@ -139,42 +142,13 @@ function appleReminderBody(capture: Capture): string {
   return parts.join("\n");
 }
 
-function shouldSyncAppleReminders(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.appleNotesEnabled &&
-      capture.target_apple_reminders === 1 &&
-      capture.synced_apple_reminders === 0,
-  );
-}
-
-function shouldSyncReminders(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.appleRemindersEnabled &&
-      capture.target_reminders === 1 &&
-      capture.synced_reminders === 0,
-  );
-}
-
-function shouldSyncAppleCalendar(capture: Capture, config: SyncConfig): boolean {
-  return Boolean(
-    config.appleCalendarEnabled &&
-      capture.target_apple_calendar === 1 &&
-      capture.synced_apple_calendar === 0 &&
-      capture.reminder_time,
-  );
-}
-
 export function requiresSync(capture: Capture, config: SyncConfig): boolean {
-  return (
-    shouldSyncSlack(capture, config) ||
-    shouldSyncDiscord(capture, config) ||
-    shouldSyncNotion(capture, config) ||
-    shouldSyncGoogle(capture, config) ||
-    shouldSyncGoogleCalendar(capture, config) ||
-    shouldSyncAppleReminders(capture, config) ||
-    shouldSyncReminders(capture, config) ||
-    shouldSyncAppleCalendar(capture, config)
-  );
+  return SYNC_DESTINATIONS.some((destination) => shouldSync(capture, destination, config));
+}
+
+/** The destinations a sync pass would try for this capture right now. */
+export function pendingDestinations(capture: Capture, config: SyncConfig): SyncDestination[] {
+  return SYNC_DESTINATIONS.filter((destination) => shouldSync(capture, destination, config));
 }
 
 function isUnauthorizedError(error: unknown): boolean {
@@ -269,6 +243,7 @@ async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): 
 export async function syncCapture(capture: Capture, config: SyncConfig): Promise<SyncResult> {
   const errors: string[] = [];
   const links: CaptureLink[] = [];
+  const attempted = pendingDestinations(capture, config);
 
   async function attempt<T>(
     label: string,
@@ -290,13 +265,13 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
     return outcome.ok;
   }
 
-  const slackSynced = shouldSyncSlack(capture, config)
+  const slackSynced = shouldSync(capture, "slack", config)
     ? await attempt("Slack", () =>
         sendSlackCapture(config.slackWebhookUrl!, capture.content, capture.tag, capture.list_name),
       )
     : false;
 
-  const discordSynced = shouldSyncDiscord(capture, config)
+  const discordSynced = shouldSync(capture, "discord", config)
     ? await attempt("Discord", () =>
         sendDiscordCapture(config.discordWebhookUrl!, capture.content, capture.tag, capture.list_name),
         undefined,
@@ -304,7 +279,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
       )
     : false;
 
-  const notionSynced = shouldSyncNotion(capture, config)
+  const notionSynced = shouldSync(capture, "notion", config)
     ? await attempt("Notion", () =>
         appendNotionCapture({
           token: config.notionToken!,
@@ -318,21 +293,21 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
       )
     : false;
 
-  const googleSynced = shouldSyncGoogle(capture, config)
+  const googleSynced = shouldSync(capture, "google_tasks", config)
     ? await attempt("Google Tasks", () => syncGoogleCapture(capture, config), undefined, (id) => ({
         destination: "google_tasks",
         externalId: id,
       }))
     : false;
 
-  const googleCalendarSynced = shouldSyncGoogleCalendar(capture, config)
+  const googleCalendarSynced = shouldSync(capture, "google_calendar", config)
     ? await attempt("Google Calendar", () => syncGoogleCalendarCapture(capture, config), undefined, (id) => ({
         destination: "google_calendar",
         externalId: id,
       }))
     : false;
 
-  const appleRemindersSynced = shouldSyncAppleReminders(capture, config)
+  const appleRemindersSynced = shouldSync(capture, "apple_notes", config)
     ? await attempt("Apple Notes", () =>
         createAppleNote({
           title: appleNoteTitle(capture.content),
@@ -344,7 +319,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
       )
     : false;
 
-  const remindersSynced = shouldSyncReminders(capture, config)
+  const remindersSynced = shouldSync(capture, "reminders", config)
     ? await attempt(
         "Reminders",
         () =>
@@ -359,7 +334,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
       )
     : false;
 
-  const appleCalendarSynced = shouldSyncAppleCalendar(capture, config)
+  const appleCalendarSynced = shouldSync(capture, "apple_calendar", config)
     ? await attempt(
         "Apple Calendar",
         () =>
@@ -383,6 +358,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
     appleRemindersSynced,
     remindersSynced,
     appleCalendarSynced,
+    attempted,
     links,
     errors,
   };

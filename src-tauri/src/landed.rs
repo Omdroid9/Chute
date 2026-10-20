@@ -88,6 +88,8 @@ struct State {
   screen_frame: NSRect,
   geometry: Geometry,
   hot: Rect,
+  /// Off until the frontend reads the user's setting (Settings → General).
+  enabled: bool,
   /// The frontend is showing more than its resting shape (Esc is watched).
   expanded: bool,
   passthrough: bool,
@@ -254,6 +256,9 @@ fn poll_once(app: &AppHandle) {
   let Some(state) = guard.as_mut() else {
     return;
   };
+  if !state.enabled {
+    return;
+  }
   state.tick = state.tick.wrapping_add(1);
 
   // Follow the pointer to whichever screen it is on, but never yank the
@@ -331,7 +336,7 @@ fn start_poller(app: &AppHandle) {
 }
 
 /// Create the Landed window and start tracking the pointer. Call once from
-/// setup (main thread).
+/// setup (main thread). Nothing shows until `landed_set_enabled(true)`.
 pub fn start(app: &AppHandle) {
   let Some(mtm) = MainThreadMarker::new() else {
     eprintln!("[landed] start must run on the main thread");
@@ -375,7 +380,7 @@ pub fn start(app: &AppHandle) {
     *guard = Some(state);
   }
 
-  ns_window.orderFrontRegardless();
+  // Stays ordered out until the frontend reads the setting and enables it.
   eprintln!(
     "[landed] ready ({})",
     if landed_geometry().has_notch { "notch" } else { "tab" }
@@ -405,4 +410,43 @@ pub fn landed_set_hot_rect(x: f64, y: f64, width: f64, height: f64, expanded: bo
       state.last_pointer = None;
     }
   }
+}
+
+/// Show or hide the panel (Settings → General → Landed).
+#[tauri::command]
+pub fn landed_set_enabled(app: AppHandle, enabled: bool) {
+  let handle = app.clone();
+  let _ = app.run_on_main_thread(move || {
+    let Some(ns_window) = ns_window_of(&handle) else {
+      return;
+    };
+    if let Ok(mut guard) = STATE.lock() {
+      if let Some(state) = guard.as_mut() {
+        state.enabled = enabled;
+        state.expanded = false;
+        state.passthrough = true;
+        state.last_pointer = None;
+      }
+    }
+    ns_window.setIgnoresMouseEvents(true);
+    if enabled {
+      ns_window.orderFrontRegardless();
+    } else {
+      ns_window.orderOut(None);
+    }
+  });
+}
+
+/// Menu bar icon click: open the panel if it's on. Returns false when it's
+/// off, so the caller can open the capture bar instead.
+pub fn open_from_tray(app: &AppHandle) -> bool {
+  let enabled = STATE
+    .lock()
+    .ok()
+    .and_then(|guard| guard.as_ref().map(|state| state.enabled))
+    .unwrap_or(false);
+  if enabled {
+    let _ = app.emit_to(LABEL, "landed://open", ());
+  }
+  enabled
 }
