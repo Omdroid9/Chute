@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   type AppendState,
+  dismissCaptureAppends,
   getAppendStatesFor,
   getCaptureLinksFor,
   getSetting,
@@ -127,6 +128,8 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
 function fixLabel(row: LandedRow, settingsOpened: boolean): string {
   if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
   if (row.problem?.kind === "reconnect") return "Fix";
+  // The original was deleted: retrying can't help. The text stays in Chute.
+  if (row.problem?.kind === "missing") return "Dismiss";
   return "Retry";
 }
 
@@ -259,6 +262,11 @@ export default function LandedWindow() {
         if (problem?.kind === "reconnect") {
           await invoke("open_settings_window");
           close(true);
+          return;
+        }
+        if (problem?.kind === "missing") {
+          await dismissCaptureAppends(row.id);
+          await refresh();
           return;
         }
         // Clear the errors so the row reads as on its way, then ask for a sync.

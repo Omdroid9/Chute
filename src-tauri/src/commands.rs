@@ -138,7 +138,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
 /// Parse a local ISO datetime string ("2026-06-15T14:00:00") into components.
 /// Returns None if the string is malformed; the caller falls back to no due date.
 #[cfg(target_os = "macos")]
-fn parse_local_iso(s: &str) -> Option<(i32, u32, u32, u32, u32, u32)> {
+pub(crate) fn parse_local_iso(s: &str) -> Option<(i32, u32, u32, u32, u32, u32)> {
   let (date_part, time_part) = s.split_once('T')?;
   let mut d = date_part.split('-');
   let year: i32 = d.next()?.parse().ok()?;

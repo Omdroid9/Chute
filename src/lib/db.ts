@@ -680,6 +680,16 @@ export async function getCaptureLinks(captureId: string): Promise<CaptureLink[]>
   return rows.map((row) => ({ destination: row.destination, externalId: row.external_id, kind: row.kind }));
 }
 
+/** Every item id already matched to a capture in one app. */
+export async function getLinkedExternalIds(destination: LinkDestination): Promise<string[]> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ external_id: string }>>(
+    `SELECT external_id FROM capture_links WHERE destination = $1;`,
+    [destination],
+  );
+  return rows.map((row) => row.external_id);
+}
+
 /** Links for many captures at once, keyed by capture id. */
 export async function getCaptureLinksFor(captureIds: string[]): Promise<Map<string, CaptureLink[]>> {
   const byCapture = new Map<string, CaptureLink[]>();
@@ -801,6 +811,15 @@ export async function markAppendFailed(id: string, error: string): Promise<void>
     error.slice(0, 500),
     id,
   ]);
+}
+
+/** Stop trying to send a capture's stuck additions (the original is gone). */
+export async function dismissCaptureAppends(captureId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `UPDATE capture_appends SET done = 1 WHERE capture_id = $1 AND done = 0 AND error IS NOT NULL;`,
+    [captureId],
+  );
 }
 
 /** Give a capture's unsent additions a fresh set of attempts (Landed's Retry). */

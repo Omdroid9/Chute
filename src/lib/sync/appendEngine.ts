@@ -7,11 +7,22 @@
  * own item rather than being lost.
  */
 import type { Capture, CaptureLink } from "../../types";
-import { getCaptureById, getCaptureLinks, listPendingAppends, markAppendDone, markAppendFailed } from "../db";
+import {
+  getCaptureById,
+  getCaptureLinks,
+  getLinkedExternalIds,
+  listPendingAppends,
+  markAppendDone,
+  markAppendFailed,
+  saveCaptureLinks,
+} from "../db";
+import { toLocalIso } from "../recurrence";
+import { parseStoredTimestamp } from "../timestamps";
 import { eventTitle } from "../titles";
 import { appendToAppleCalendarEvent } from "./appleCalendar";
 import { appendToAppleNote, createAppleNote } from "./appleNotes";
 import { appendToAppleReminder, createAppleReminder } from "./appleRemindersSync";
+import { findAppleItem, type AppleItemDestination } from "./appleItems";
 import { SYNC_ERROR_LABELS, type SyncDestination } from "./destinations";
 import { editDiscordMessage, sendDiscordFollowUp } from "./discord";
 import { appendToGoogleEventDescription, calendarEventId } from "./googleCalendar";
@@ -30,6 +41,52 @@ export interface AppendOutcome {
   captureId: string;
   landed: SyncDestination[];
   failed: SyncDestination[];
+}
+
+const LIST_MARKER = /^\s*(?:- \[[ xX]\]\s+|[-*]\s+|\d+\.\s+)/;
+
+function isAppleItem(destination: SyncDestination): destination is AppleItemDestination {
+  return destination === "reminders" || destination === "apple_notes" || destination === "apple_calendar";
+}
+
+/**
+ * The item a capture became in an Apple app, for captures sent before Chute
+ * kept ids: looked up by title (and start, for events), then remembered so
+ * the next addition goes straight to it. Null if it can't be found.
+ */
+export async function findOriginalAppleItem(
+  destination: SyncDestination,
+  capture: Capture,
+  config: SyncConfig,
+): Promise<CaptureLink | null> {
+  if (!isAppleItem(destination)) return null;
+  if (destination === "apple_calendar" && !capture.reminder_time) return null;
+
+  const firstLine = (capture.content.split("\n")[0] ?? "").trim();
+  // Same titles the writers used: Notes names a note after its first line.
+  const title = destination === "apple_notes" ? firstLine.replace(LIST_MARKER, "").trim() : eventTitle(capture.content);
+  const container =
+    destination === "reminders"
+      ? config.appleRemindersList || "Chute"
+      : destination === "apple_notes"
+        ? config.appleNotesFolder || "Chute"
+        : config.appleCalendarName || "";
+  const madeAt = parseStoredTimestamp(capture.created_at);
+  if (!title || Number.isNaN(madeAt.getTime())) return null;
+
+  const externalId = await findAppleItem({
+    destination,
+    title,
+    container,
+    notBefore: toLocalIso(madeAt),
+    start: capture.reminder_time,
+    excluded: await getLinkedExternalIds(destination),
+  });
+  if (!externalId) return null;
+
+  const link: CaptureLink = { destination, externalId };
+  await saveCaptureLinks(capture.id, [link]);
+  return link;
 }
 
 /**
@@ -111,7 +168,7 @@ export async function appendToDestination(
     case "apple_calendar":
       // An event can't be recreated without its time; say so instead.
       if (!link) throw new Error("Couldn't find the original event in Calendar.");
-      return appendToAppleCalendarEvent(link.externalId, addition);
+      return appendToAppleCalendarEvent(link.externalId, addition, config.appleCalendarName ?? "");
   }
 }
 
@@ -148,10 +205,15 @@ export async function runAppendPass(
     // Disconnected since: keep it queued until the app is connected again.
     if (!destinationReady(capture, item.destination, config)) continue;
 
-    const link = links.get(item.captureId)?.find((candidate) => candidate.destination === item.destination) ?? null;
+    const captureLinks = links.get(item.captureId) ?? [];
     const outcome = outcomes.get(item.captureId) ?? { captureId: item.captureId, landed: [], failed: [] };
     outcomes.set(item.captureId, outcome);
     try {
+      let link = captureLinks.find((candidate) => candidate.destination === item.destination) ?? null;
+      if (!link && isAppleItem(item.destination)) {
+        link = await findOriginalAppleItem(item.destination, capture, config);
+        if (link) captureLinks.push(link);
+      }
       await appendToDestination(item.destination, capture, link, item.content, config);
       await markAppendDone(item.id);
       succeeded += 1;

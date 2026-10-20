@@ -3,7 +3,7 @@
  * "<Label>: <raw error>" entries joined with " | ".
  */
 
-export type SyncProblemKind = "permission" | "reconnect" | "offline" | "other";
+export type SyncProblemKind = "permission" | "reconnect" | "offline" | "missing" | "other";
 
 export interface SyncProblem {
   kind: SyncProblemKind;
@@ -27,6 +27,9 @@ const APP_FOR_LABEL: Record<string, string> = {
 
 const PERMISSION = /-1743|not authori[sz]ed to send apple events|not allowed to send apple events|erraeventnotpermitted/i;
 const RECONNECT = /http 401|http 403|invalid_grant|unauthori[sz]ed|invalid (access )?token/i;
+// The item a capture became was deleted or can't be found (-1728: AppleScript
+// "Can't get …").
+const MISSING = /couldn'?t find|can'?t get (?:reminder|note|event)|-1728\b/i;
 const OFFLINE = /network|offline|timed out|timeout|failed to fetch|could not connect|error sending request|dns/i;
 
 function shorten(text: string, max = 80): string {
@@ -50,6 +53,9 @@ export function describeSyncError(raw: string | null | undefined): SyncProblem |
   }
   if (RECONNECT.test(detail)) {
     return { kind: "reconnect", app, message: `Reconnect ${name} in Settings` };
+  }
+  if (MISSING.test(detail)) {
+    return { kind: "missing", app, message: `Couldn't find the original in ${name}` };
   }
   if (OFFLINE.test(detail)) {
     return { kind: "offline", app, message: `Couldn't reach ${app ?? "the app"}; will retry` };

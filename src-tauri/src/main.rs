@@ -298,7 +298,8 @@ fn main() {
       apple_items::open_automation_settings,
       apple_items::append_to_reminder,
       apple_items::append_to_apple_note,
-      apple_items::append_to_calendar_event
+      apple_items::append_to_calendar_event,
+      apple_items::find_apple_item
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
