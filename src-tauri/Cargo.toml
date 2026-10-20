@@ -34,5 +34,6 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 block2 = "0.6"
-# Landed notch panel: window level/behaviour, notch geometry, pointer polling.
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSResponder", "NSScreen", "NSWindow"] }
+# Landed notch panel (level, notch geometry, pointer polling) and the capture
+# bar as a non-activating NSPanel.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSWindow"] }

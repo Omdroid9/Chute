@@ -1,6 +1,11 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod capture_panel;
+#[cfg(not(target_os = "macos"))]
+#[path = "capture_panel_stub.rs"]
+mod capture_panel;
 mod commands;
 #[cfg(target_os = "macos")]
 mod landed;
@@ -288,9 +293,7 @@ fn main() {
     .expect("error while building tauri application")
     .run(|app_handle, event| {
       if let RunEvent::ExitRequested { .. } = event {
-        for (_, window) in app_handle.webview_windows() {
-          let _ = window.destroy();
-        }
+        window::destroy_all_windows(app_handle);
       }
     });
 }

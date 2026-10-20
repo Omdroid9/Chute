@@ -4,7 +4,7 @@ use tauri::{
 
 use crate::{AppState, MainView};
 
-const CAPTURE_WINDOW_LABEL: &str = "main";
+pub const CAPTURE_WINDOW_LABEL: &str = "main";
 const LIBRARY_WINDOW_LABEL: &str = "library";
 const CAPTURE_WIDTH: f64 = 640.0;
 // The capture overlay opens compact (input only) and grows once the user
@@ -33,6 +33,9 @@ pub fn configure_capture_window(app: &tauri::AppHandle) -> Result<(), String> {
   // transparent frameless window it bleeds past the shell's rounded corners as
   // faint square edges. The CSS shadow already follows the rounded shape.
   let _ = window.set_shadow(false);
+
+  // Spotlight-style: the bar takes the keyboard without activating Chute.
+  crate::capture_panel::install(&window);
 
   let clone = window.clone();
   window.on_window_event(move |event| {
@@ -100,7 +103,11 @@ pub fn show_capture_window(app: &tauri::AppHandle) -> Result<(), String> {
   position_capture_window(&window)?;
   window.unminimize().map_err(|error| error.to_string())?;
   window.show().map_err(|error| error.to_string())?;
-  window.set_focus().map_err(|error| error.to_string())?;
+  // Key the panel without activating Chute; activation is only a request on
+  // current macOS and is often refused for a hotkey, leaving the caret behind.
+  if !crate::capture_panel::focus(&window) {
+    window.set_focus().map_err(|error| error.to_string())?;
+  }
 
   {
     let state = app.state::<AppState>();
@@ -272,10 +279,17 @@ pub fn close_legacy_settings_window(app: &tauri::AppHandle) {
 
 /// Close every webview, then terminate the process (tray + hotkeys included).
 pub fn quit_app(app: &tauri::AppHandle) {
+  destroy_all_windows(app);
+  app.exit(0);
+}
+
+/// Tear down every window. The capture panel gets its original class back
+/// first, or AppKit throws during dealloc.
+pub fn destroy_all_windows(app: &tauri::AppHandle) {
+  crate::capture_panel::restore(app);
   for (_, window) in app.webview_windows() {
     let _ = window.destroy();
   }
-  app.exit(0);
 }
 
 /// Resize the capture overlay between its compact and expanded heights.
