@@ -8,6 +8,8 @@ import type {
   CaptureTag,
   RoutingRule,
   RoutingRuleField,
+  CaptureLink,
+  LinkDestination,
 } from "../types";
 
 const DB_URL = "sqlite:chute.db";
@@ -327,6 +329,19 @@ async function runBootstrap(): Promise<void> {
     );
   `);
 
+  // Where each capture landed in each app (that app's id for the item), so Chute
+  // can find it again to open it or add to it. One row per capture per app.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS capture_links (
+      capture_id TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      kind TEXT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (capture_id, destination)
+    );
+  `);
+
   await ensureCaptureColumn(db, "synced_notion", "INTEGER DEFAULT 0");
   await ensureCaptureColumn(db, "capture_lane", "TEXT DEFAULT 'focus'");
   await ensureCaptureColumn(db, "list_name", "TEXT DEFAULT 'Inbox'");
@@ -605,9 +620,38 @@ export async function getTotalCaptureCount(): Promise<number> {
 
 /** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,
  * so the agent job row is removed explicitly. */
+/** Remember where a capture landed. A later sync to the same app replaces the old link. */
+export async function saveCaptureLinks(captureId: string, links: CaptureLink[]): Promise<void> {
+  if (links.length === 0) return;
+  const db = await getDatabase();
+  for (const link of links) {
+    await db.execute(
+      `
+        INSERT OR REPLACE INTO capture_links (capture_id, destination, external_id, kind)
+        VALUES ($1, $2, $3, $4);
+      `,
+      [captureId, link.destination, link.externalId, link.kind ?? null],
+    );
+  }
+}
+
+export async function getCaptureLinks(captureId: string): Promise<CaptureLink[]> {
+  const db = await getDatabase();
+  const rows = await db.select<Array<{ destination: LinkDestination; external_id: string; kind: string | null }>>(
+    `
+      SELECT destination, external_id, kind
+      FROM capture_links
+      WHERE capture_id = $1;
+    `,
+    [captureId],
+  );
+  return rows.map((row) => ({ destination: row.destination, externalId: row.external_id, kind: row.kind }));
+}
+
 export async function deleteCapture(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM agent_jobs WHERE capture_id = $1;`, [id]);
+  await db.execute(`DELETE FROM capture_links WHERE capture_id = $1;`, [id]);
   await db.execute(`DELETE FROM captures WHERE id = $1;`, [id]);
 }
 

@@ -43,3 +43,20 @@ export async function httpPostJson(
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * Read an id out of a JSON response without ever throwing. A send that already
+ * succeeded must stay successful even if its response can't be parsed;
+ * otherwise the retry would post the capture a second time.
+ */
+export async function readJsonId(
+  response: Response,
+  pick: (body: Record<string, unknown>) => unknown,
+): Promise<string> {
+  try {
+    const value = pick((await response.json()) as Record<string, unknown>);
+    return typeof value === "string" ? value : "";
+  } catch {
+    return "";
+  }
+}

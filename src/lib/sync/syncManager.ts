@@ -4,6 +4,7 @@ import {
   getSettings,
   listDueRecurringReminderCaptures,
   listCaptures,
+  saveCaptureLinks,
   setCaptureRecurrenceNextAt,
   setCaptureSyncError,
   setSetting,
@@ -241,6 +242,14 @@ export async function runSyncPass(options?: {
     if (Object.keys(updatePayload).length > 0) {
       await updateCaptureSyncStatus(capture.id, updatePayload);
       stats.capturesSynced += 1;
+    }
+
+    // Remember where it landed (after the sent flags are saved: a lost link is
+    // better than a capture that gets re-sent because this write failed).
+    try {
+      await saveCaptureLinks(capture.id, result.links);
+    } catch (error) {
+      console.error("Could not save capture links", error);
     }
 
     if (result.errors.length > 0) {

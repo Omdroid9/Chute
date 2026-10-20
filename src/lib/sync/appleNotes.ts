@@ -10,9 +10,10 @@ export interface CreateAppleNoteInput {
  * Create a note in the macOS Notes app. This runs entirely inside the app's
  * native (Rust) layer via AppleScript. No external bridge or server is required.
  * On non-macOS platforms the underlying command returns an error.
+ * Resolves to the new note's id, so Chute can find the note again.
  */
-export async function createAppleNote(input: CreateAppleNoteInput): Promise<void> {
-  await invoke("create_apple_note", {
+export async function createAppleNote(input: CreateAppleNoteInput): Promise<string> {
+  return invoke<string>("create_apple_note", {
     folder: input.folder?.trim() || "Chute",
     title: input.title,
     body: input.body,

@@ -1,5 +1,5 @@
 import type { CaptureTag } from "../../types";
-import { httpRequest } from "../net/http";
+import { httpRequest, readJsonId } from "../net/http";
 import { formatTaggedListMessage } from "./messageFormat";
 
 const NOTION_VERSION = "2022-06-28";
@@ -27,8 +27,9 @@ function clampTitle(value: string): string {
   return value.length <= 1800 ? value : `${value.slice(0, 1797)}...`;
 }
 
-async function appendToPage(parentId: string, token: string, content: string): Promise<void> {
-  await httpRequest(`https://api.notion.com/v1/blocks/${normalizeParentId(parentId)}/children`, {
+/** Appends a paragraph to the page; resolves to the new block's id. */
+async function appendToPage(parentId: string, token: string, content: string): Promise<string> {
+  const response = await httpRequest(`https://api.notion.com/v1/blocks/${normalizeParentId(parentId)}/children`, {
     method: "PATCH",
     headers: notionHeaders(token),
     body: JSON.stringify({
@@ -50,6 +51,7 @@ async function appendToPage(parentId: string, token: string, content: string): P
       ],
     }),
   });
+  return readJsonId(response, (body) => (body.results as Array<{ id?: string }> | undefined)?.[0]?.id);
 }
 
 async function createInDatabase(
@@ -58,7 +60,7 @@ async function createInDatabase(
   content: string,
   tag: CaptureTag,
   listName: string,
-): Promise<void> {
+): Promise<string> {
   const databaseId = normalizeParentId(parentId);
   const databaseResponse = await httpRequest(`https://api.notion.com/v1/databases/${databaseId}`, {
     method: "GET",
@@ -78,7 +80,7 @@ async function createInDatabase(
 
   const [titlePropertyName] = titleProperty;
 
-  await httpRequest("https://api.notion.com/v1/pages", {
+  const response = await httpRequest("https://api.notion.com/v1/pages", {
     method: "POST",
     headers: notionHeaders(token),
     body: JSON.stringify({
@@ -115,6 +117,13 @@ async function createInDatabase(
       ],
     }),
   });
+  return readJsonId(response, (page) => page.id);
+}
+
+/** Where a capture landed in Notion: a paragraph block on a page, or a database page. */
+export interface NotionCaptureRef {
+  kind: "block" | "page";
+  id: string;
 }
 
 export async function appendNotionCapture(input: {
@@ -123,22 +132,21 @@ export async function appendNotionCapture(input: {
   content: string;
   tag: CaptureTag;
   listName: string;
-}): Promise<void> {
+}): Promise<NotionCaptureRef> {
   const formattedContent = formatTaggedListMessage(input.content, input.tag, input.listName);
 
   try {
-    await appendToPage(input.pageId, input.token, formattedContent);
-    return;
+    return { kind: "block", id: await appendToPage(input.pageId, input.token, formattedContent) };
   } catch (pageError) {
     try {
-      await createInDatabase(
+      const id = await createInDatabase(
         input.pageId,
         input.token,
         formattedContent,
         input.tag,
         input.listName,
       );
-      return;
+      return { kind: "page", id };
     } catch (databaseError) {
       throw new Error(
         `Notion sync failed. Page append error: ${formatHttpError(pageError)}. Database create error: ${formatHttpError(databaseError)}`,

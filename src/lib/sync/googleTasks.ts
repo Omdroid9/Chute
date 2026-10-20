@@ -1,4 +1,4 @@
-import { httpPostJson, httpRequest } from "../net/http";
+import { httpPostJson, httpRequest, readJsonId } from "../net/http";
 
 export interface GoogleTaskList {
   id: string;
@@ -31,8 +31,8 @@ export async function createGoogleTask(input: {
   title: string;
   notes?: string;
   due?: string;
-}): Promise<void> {
-  await httpPostJson(
+}): Promise<string> {
+  const response = await httpPostJson(
     `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(input.listId)}/tasks`,
     {
       title: input.title,
@@ -41,6 +41,8 @@ export async function createGoogleTask(input: {
     },
     authHeaders(input.accessToken),
   );
+  // The new task's id, so Chute can update it later.
+  return readJsonId(response, (task) => task.id);
 }
 
 export async function refreshGoogleAccessToken(

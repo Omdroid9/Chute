@@ -4,7 +4,7 @@ import { appleNoteBody } from "./noteFormat";
 import { eventTitle } from "../titles";
 import { createAppleReminder } from "./appleRemindersSync";
 import { createAppleCalendarEvent } from "./appleCalendar";
-import type { Capture } from "../../types";
+import type { Capture, CaptureLink, LinkDestination } from "../../types";
 import { calendarEventId, createGoogleCalendarEvent } from "./googleCalendar";
 import { sendDiscordCapture } from "./discord";
 import { createGoogleTask, refreshGoogleAccessToken } from "./googleTasks";
@@ -42,6 +42,8 @@ export interface SyncResult {
   appleRemindersSynced: boolean;
   remindersSynced: boolean;
   appleCalendarSynced: boolean;
+  /** Links for every destination that succeeded this pass and returned an id. */
+  links: CaptureLink[];
   errors: string[];
 }
 
@@ -193,20 +195,18 @@ function isPermissionError(error: unknown): boolean {
   );
 }
 
-async function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<void> {
-  const createTask = async (accessToken: string) => {
-    await createGoogleTask({
+async function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<string> {
+  const createTask = async (accessToken: string) =>
+    createGoogleTask({
       accessToken,
       listId: config.googleTasksListId!,
       title: eventTitle(capture.content),
       notes: `Chute list: ${capture.list_name}`,
       due: capture.reminder_time ?? undefined,
     });
-  };
 
   try {
-    await createTask(config.googleTasksAccessToken!);
-    return;
+    return await createTask(config.googleTasksAccessToken!);
   } catch (error) {
     if (
       !isUnauthorizedError(error) ||
@@ -225,10 +225,11 @@ async function syncGoogleCapture(capture: Capture, config: SyncConfig): Promise<
   await setSetting("google_tasks_access_token", refreshedAccessToken);
   config.googleTasksAccessToken = refreshedAccessToken;
 
-  await createTask(refreshedAccessToken);
+  return createTask(refreshedAccessToken);
 }
 
-async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): Promise<void> {
+/** Resolves to the event id, which is derived from the capture id (so it's stable). */
+async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): Promise<string> {
   const createEvent = async (accessToken: string) => {
     await createGoogleCalendarEvent({
       accessToken,
@@ -242,7 +243,7 @@ async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): 
 
   try {
     await createEvent(config.googleTasksAccessToken!);
-    return;
+    return calendarEventId(capture.id);
   } catch (error) {
     if (
       !isUnauthorizedError(error) ||
@@ -262,19 +263,29 @@ async function syncGoogleCalendarCapture(capture: Capture, config: SyncConfig): 
   config.googleTasksAccessToken = refreshedAccessToken;
 
   await createEvent(refreshedAccessToken);
+  return calendarEventId(capture.id);
 }
 
 export async function syncCapture(capture: Capture, config: SyncConfig): Promise<SyncResult> {
   const errors: string[] = [];
+  const links: CaptureLink[] = [];
 
-  async function attempt(
+  async function attempt<T>(
     label: string,
-    task: () => Promise<void>,
+    task: () => Promise<T>,
     noRetry?: (error: unknown) => boolean,
+    toLink?: (value: T) => Omit<CaptureLink, "destination"> & { destination: LinkDestination },
   ): Promise<boolean> {
-    const outcome = await runWithRetry(task, noRetry);
+    let value: T | undefined;
+    const outcome = await runWithRetry(async () => {
+      value = await task();
+    }, noRetry);
     if (!outcome.ok && outcome.error) {
       errors.push(`${label}: ${outcome.error}`);
+    }
+    if (outcome.ok && toLink && value !== undefined) {
+      const link = toLink(value);
+      if (link.externalId) links.push(link);
     }
     return outcome.ok;
   }
@@ -288,6 +299,8 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
   const discordSynced = shouldSyncDiscord(capture, config)
     ? await attempt("Discord", () =>
         sendDiscordCapture(config.discordWebhookUrl!, capture.content, capture.tag, capture.list_name),
+        undefined,
+        (id) => ({ destination: "discord", externalId: id }),
       )
     : false;
 
@@ -300,15 +313,23 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
           tag: capture.tag,
           listName: capture.list_name,
         }),
+        undefined,
+        (ref) => ({ destination: "notion", externalId: ref.id, kind: ref.kind }),
       )
     : false;
 
   const googleSynced = shouldSyncGoogle(capture, config)
-    ? await attempt("Google Tasks", () => syncGoogleCapture(capture, config))
+    ? await attempt("Google Tasks", () => syncGoogleCapture(capture, config), undefined, (id) => ({
+        destination: "google_tasks",
+        externalId: id,
+      }))
     : false;
 
   const googleCalendarSynced = shouldSyncGoogleCalendar(capture, config)
-    ? await attempt("Google Calendar", () => syncGoogleCalendarCapture(capture, config))
+    ? await attempt("Google Calendar", () => syncGoogleCalendarCapture(capture, config), undefined, (id) => ({
+        destination: "google_calendar",
+        externalId: id,
+      }))
     : false;
 
   const appleRemindersSynced = shouldSyncAppleReminders(capture, config)
@@ -318,6 +339,8 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
           body: appleNoteBody(capture.content, capture.list_name, capture.tag),
           folder: config.appleNotesFolder,
         }),
+        undefined,
+        (id) => ({ destination: "apple_notes", externalId: id }),
       )
     : false;
 
@@ -332,6 +355,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
             dueDate: capture.reminder_time ?? null,
           }),
         isPermissionError,
+        (id) => ({ destination: "reminders", externalId: id }),
       )
     : false;
 
@@ -346,6 +370,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
             start: capture.reminder_time!,
           }),
         isPermissionError,
+        (id) => ({ destination: "apple_calendar", externalId: id }),
       )
     : false;
 
@@ -358,6 +383,7 @@ export async function syncCapture(capture: Capture, config: SyncConfig): Promise
     appleRemindersSynced,
     remindersSynced,
     appleCalendarSynced,
+    links,
     errors,
   };
 }

@@ -10,10 +10,10 @@ export interface CreateAppleReminderInput {
 /**
  * Create a reminder in macOS Reminders.app via the native Rust layer.
  * No external bridge or server required. On non-macOS the underlying
- * command returns an error.
+ * command returns an error. Resolves to the new reminder's id.
  */
-export async function createAppleReminder(input: CreateAppleReminderInput): Promise<void> {
-  await invoke("create_apple_reminder", {
+export async function createAppleReminder(input: CreateAppleReminderInput): Promise<string> {
+  return invoke<string>("create_apple_reminder", {
     list: input.list?.trim() || "Chute",
     title: input.title,
     body: input.body,

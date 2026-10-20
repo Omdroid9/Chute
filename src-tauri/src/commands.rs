@@ -154,14 +154,15 @@ fn parse_local_iso(s: &str) -> Option<(i32, u32, u32, u32, u32, u32)> {
 /// Create a reminder in macOS Reminders.app via AppleScript.
 /// Values are passed as argv, never interpolated into the script.
 /// When `due_date` is a local ISO string ("2026-06-15T14:00:00") the reminder
-/// gets a due date; otherwise it is created without one.
+/// gets a due date; otherwise it is created without one. Returns the new
+/// reminder's AppleScript id so Chute can find it again later.
 #[tauri::command]
 pub fn create_apple_reminder(
   list: String,
   title: String,
   body: String,
   due_date: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
   #[cfg(target_os = "macos")]
   {
     use std::io::Write;
@@ -210,10 +211,12 @@ pub fn create_apple_reminder(
       set hours of dueDate to hr
       set minutes of dueDate to mn
       set seconds of dueDate to sc
-      tell theList to make new reminder with properties {name:reminderTitle, body:reminderBody, due date:dueDate}
+      tell theList to set newReminder to (make new reminder with properties {name:reminderTitle, body:reminderBody, due date:dueDate})
     else
-      tell theList to make new reminder with properties {name:reminderTitle, body:reminderBody}
+      tell theList to set newReminder to (make new reminder with properties {name:reminderTitle, body:reminderBody})
     end if
+    -- Hand back a direct id (no whose/exists lookups, which crash on macOS 26).
+    return id of newReminder
   end tell
 end run"#;
 
@@ -275,7 +278,8 @@ end run"#;
       return Err(detail);
     }
 
-    Ok(())
+    // The script's return value (the new item's id) is printed to stdout.
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
   }
 
   #[cfg(not(target_os = "macos"))]
@@ -288,9 +292,9 @@ end run"#;
 /// Create a note in the macOS Notes app via AppleScript, with no external
 /// helper process. Values are passed as `osascript` arguments (argv) rather
 /// than interpolated into the script, so note content cannot break out of the
-/// script or inject AppleScript.
+/// script or inject AppleScript. Returns the new note's AppleScript id.
 #[tauri::command]
-pub fn create_apple_note(folder: String, title: String, body: String) -> Result<(), String> {
+pub fn create_apple_note(folder: String, title: String, body: String) -> Result<String, String> {
   #[cfg(target_os = "macos")]
   {
     use std::io::Write;
@@ -326,7 +330,8 @@ pub fn create_apple_note(folder: String, title: String, body: String) -> Result<
       if theFolder is missing value then
         set theFolder to (make new folder with properties {name:folderName})
       end if
-      tell theFolder to make new note with properties {body:noteBody}
+      tell theFolder to set newNote to (make new note with properties {body:noteBody})
+      return id of newNote
     end tell
   end tell
 end run"#;
@@ -370,7 +375,8 @@ end run"#;
       return Err(detail);
     }
 
-    Ok(())
+    // The script's return value (the new item's id) is printed to stdout.
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
   }
 
   #[cfg(not(target_os = "macos"))]
@@ -385,6 +391,7 @@ end run"#;
 /// the first writable calendar (the user's default); a name creates it if
 /// missing. `alarm_minutes` adds a display alarm that many minutes before the
 /// start. Values are passed as argv, never interpolated into the script.
+/// Returns the new event's uid.
 #[tauri::command]
 pub fn create_apple_calendar_event(
   calendar: String,
@@ -393,7 +400,7 @@ pub fn create_apple_calendar_event(
   start: String,
   end: String,
   alarm_minutes: Option<i64>,
-) -> Result<(), String> {
+) -> Result<String, String> {
   #[cfg(target_os = "macos")]
   {
     use std::io::Write;
@@ -453,6 +460,7 @@ pub fn create_apple_calendar_event(
         tell newEvent to make new display alarm at end of display alarms with properties {trigger interval:-(alarmMin as integer)}
       end if
     end tell
+    return uid of newEvent
   end tell
 end run"#;
 
@@ -520,7 +528,8 @@ end run"#;
       return Err(detail);
     }
 
-    Ok(())
+    // The script's return value (the new item's id) is printed to stdout.
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
   }
 
   #[cfg(not(target_os = "macos"))]

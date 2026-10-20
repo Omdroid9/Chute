@@ -82,3 +82,24 @@ export interface Capture {
 }
 
 export type ThemeMode = "auto" | "dark" | "light";
+
+/**
+ * Where a capture landed, so Chute can find that item again (open it, add to it).
+ * Slack webhooks return no id, so Slack never has a link.
+ */
+export type LinkDestination =
+  | "discord"
+  | "notion"
+  | "google_tasks"
+  | "google_calendar"
+  | "apple_notes"
+  | "reminders"
+  | "apple_calendar";
+
+export interface CaptureLink {
+  destination: LinkDestination;
+  /** The item's id in that app (AppleScript id, Google id, Notion block/page id, Discord message id). */
+  externalId: string;
+  /** Extra shape info when one destination can create different kinds of item (Notion: "block" | "page"). */
+  kind?: string | null;
+}

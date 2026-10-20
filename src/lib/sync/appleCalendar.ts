@@ -57,13 +57,14 @@ export function eventDurationMinutes(text: string): number {
  * Create an event in macOS Calendar.app via the native Rust layer. When `end`
  * is omitted it derives the end from a duration inferred from the title text
  * (explicit range, else 30 min). On non-macOS the command returns an error.
+ * Resolves to the new event's uid.
  */
 export async function createAppleCalendarEvent(
   input: CreateAppleCalendarEventInput,
-): Promise<void> {
+): Promise<string> {
   const end =
     input.end ?? addMinutesLocalIso(input.start, eventDurationMinutes(input.title));
-  await invoke("create_apple_calendar_event", {
+  return invoke<string>("create_apple_calendar_event", {
     calendar: input.calendar?.trim() || "",
     title: input.title,
     notes: input.notes,
