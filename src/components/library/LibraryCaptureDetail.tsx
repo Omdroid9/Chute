@@ -9,6 +9,7 @@ import {
   syncStatusFor,
 } from "./libraryShared";
 import { parseStoredTimestamp } from "../../lib/timestamps";
+import { formatReminderTime, parseReminderTime } from "../../lib/reminderTime";
 import SyncErrorNotice from "../SyncErrorNotice";
 
 interface Props {
@@ -80,9 +81,13 @@ export default function LibraryCaptureDetail({
           </span>
           <span className="library-pill">{capture.list_name}</span>
           {capture.reminder_time ? (
-            <span className="library-pill library-pill-accent font-mono">
-              {capture.reminder_time}
-            </span>
+            <time
+              className="library-pill library-pill-accent font-mono"
+              dateTime={capture.reminder_time}
+              title={parseReminderTime(capture.reminder_time).toLocaleString()}
+            >
+              {formatReminderTime(capture.reminder_time)}
+            </time>
           ) : null}
         </div>
       </section>
