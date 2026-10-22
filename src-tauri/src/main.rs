@@ -294,6 +294,7 @@ fn main() {
       landed::landed_geometry,
       landed::landed_set_hot_rect,
       landed::landed_set_enabled,
+      landed::landed_copy_text,
       apple_items::open_in_apple_app,
       apple_items::open_automation_settings,
       apple_items::append_to_reminder,

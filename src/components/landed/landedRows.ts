@@ -22,7 +22,10 @@ export interface LandedTarget {
 
 export interface LandedRow {
   id: string;
+  /** One line, for the row. */
   text: string;
+  /** As captured, line breaks and all (what Copy puts on the clipboard). */
+  content: string;
   /** Where it went, e.g. "Reminders" or "Notes + Slack". */
   where: string;
   status: LandedStatus;
@@ -56,7 +59,7 @@ export function toLandedRow(
       link: links.find((link) => link.destination === destination) ?? null,
     }));
 
-  const base = { id: capture.id, text, reminderTime: capture.reminder_time };
+  const base = { id: capture.id, text, content: capture.content.trim(), reminderTime: capture.reminder_time };
   if (targets.length === 0) {
     return { ...base, where: "Chute", status: "kept", targets, problem: null };
   }

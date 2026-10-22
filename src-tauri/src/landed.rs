@@ -26,8 +26,11 @@ use std::time::Duration;
 
 use objc2::runtime::NSObjectProtocol;
 use objc2::{msg_send, sel, MainThreadMarker};
-use objc2_app_kit::{NSEvent, NSScreen, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_app_kit::{
+  NSEvent, NSPasteboard, NSPasteboardTypeString, NSScreen, NSStatusWindowLevel, NSWindow,
+  NSWindowCollectionBehavior,
+};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -35,9 +38,12 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 pub const LABEL: &str = "landed";
 
 /// Room for the open panel plus its shadow. Everything outside the hot rect
-/// is click-through, so a generous canvas costs nothing.
+/// is click-through, so a generous canvas costs nothing. It is as tall as a
+/// share of the screen allows, so a busy day's captures fit before scrolling.
 const CANVAS_WIDTH: f64 = 440.0;
-const CANVAS_HEIGHT: f64 = 340.0;
+const MIN_CANVAS_HEIGHT: f64 = 340.0;
+const MAX_CANVAS_HEIGHT: f64 = 640.0;
+const CANVAS_SCREEN_SHARE: f64 = 0.7;
 /// Virtual notch drawn on screens without a real one.
 const TAB_WIDTH: f64 = 46.0;
 const TAB_HEIGHT: f64 = 14.0;
@@ -149,14 +155,17 @@ fn layout_for(screen: &NSScreen) -> (NSRect, NSRect, Geometry) {
       false,
     ),
   };
+  let canvas_height = (screen_frame.size.height * CANVAS_SCREEN_SHARE)
+    .floor()
+    .clamp(MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT);
   let frame = NSRect::new(
-    NSPoint::new((centre_x - CANVAS_WIDTH / 2.0).round(), screen_top - CANVAS_HEIGHT),
-    NSSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
+    NSPoint::new((centre_x - CANVAS_WIDTH / 2.0).round(), screen_top - canvas_height),
+    NSSize::new(CANVAS_WIDTH, canvas_height),
   );
   let notch_x = centre_x - notch_width / 2.0 - frame.origin.x;
   let geometry = Geometry {
     width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    height: canvas_height,
     notch: Rect { x: notch_x, y: 0.0, width: notch_width, height: notch_height },
     has_notch,
   };
@@ -345,7 +354,7 @@ pub fn start(app: &AppHandle) {
 
   let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
     .title("Landed")
-    .inner_size(CANVAS_WIDTH, CANVAS_HEIGHT)
+    .inner_size(CANVAS_WIDTH, MIN_CANVAS_HEIGHT)
     .decorations(false)
     .transparent(true)
     .background_color(tauri::window::Color(0, 0, 0, 0))
@@ -435,6 +444,21 @@ pub fn landed_set_enabled(app: AppHandle, enabled: bool) {
       ns_window.orderOut(None);
     }
   });
+}
+
+/// Landed's Copy: put a capture's text on the clipboard so it can be pasted
+/// into the app being worked in, without switching to Chute.
+#[tauri::command]
+pub fn landed_copy_text(text: String) -> Result<(), String> {
+  let pasteboard = NSPasteboard::generalPasteboard();
+  pasteboard.clearContents();
+  // Safety: AppKit's read-only constant for plain text.
+  let kind = unsafe { NSPasteboardTypeString };
+  if pasteboard.setString_forType(&NSString::from_str(&text), kind) {
+    Ok(())
+  } else {
+    Err("Could not copy to the clipboard".into())
+  }
 }
 
 /// Menu bar icon click: open the panel if it's on. Returns false when it's

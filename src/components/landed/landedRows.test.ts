@@ -52,6 +52,8 @@ describe("toLandedRow", () => {
       { destination: "reminders", externalId: "x-apple-reminder://r1" },
     ]);
     expect(row).toMatchObject({ text: "call mom tomorrow at 5pm", where: "Reminders", status: "landed" });
+    // Copy takes the capture as written, line break included.
+    expect(row.content).toBe("call mom\n tomorrow at 5pm");
     expect(row.targets[0].link?.externalId).toBe("x-apple-reminder://r1");
   });
 

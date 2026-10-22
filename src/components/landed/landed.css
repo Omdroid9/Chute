@@ -228,6 +228,8 @@ html[data-window="landed"] body {
 .landed-panel {
   position: absolute;
   left: 50%;
+  display: flex;
+  flex-direction: column;
   transform: translateX(-50%);
   box-sizing: border-box;
   padding: 6px 12px 0;
@@ -285,10 +287,65 @@ html[data-window="landed"] body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The whole day's list; it scrolls once the panel reaches its full height. */
+.landed-scroll {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .landed-rows {
+  position: relative;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
+  scrollbar-width: none;
+}
+
+.landed-rows::-webkit-scrollbar {
+  display: none;
+}
+
+/* "N more" strips over the list's ends; resting on one scrolls, like an
+   overlong macOS menu, so nothing depends on the scroll wheel reaching a
+   window that never takes focus. */
+.landed-more {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: flex;
+  height: 34px;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  color: var(--landed-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  transition: color 120ms ease;
+}
+
+/* The label sits in the solid end of the fade, clear of the row behind. */
+.landed-more.is-up {
+  top: 0;
+  align-items: flex-start;
+  padding-top: 3px;
+  background: linear-gradient(#000 50%, transparent);
+}
+
+.landed-more.is-down {
+  bottom: 0;
+  align-items: flex-end;
+  padding-bottom: 3px;
+  background: linear-gradient(transparent, #000 58%);
+}
+
+.landed-more.is-hover {
+  color: #fff;
 }
 
 .landed-row {
@@ -355,13 +412,19 @@ html[data-window="landed"] body {
   gap: 8px;
 }
 
-.landed-row-add {
+.landed-row-add,
+.landed-row-copy {
   padding: 2px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
   font-size: 11.5px;
   font-weight: 600;
+}
+
+.landed-row-copy.is-copied {
+  background: rgba(93, 202, 165, 0.18);
+  color: var(--landed-green);
 }
 
 .landed-row-where {
@@ -408,12 +471,7 @@ html[data-window="landed"] body {
   background: rgba(255, 255, 255, 0.25);
 }
 
-.landed-more {
-  text-align: center;
-}
-
-.landed-empty,
-.landed-more {
+.landed-empty {
   margin: 0;
   padding: 4px 8px 6px;
   color: var(--landed-muted);

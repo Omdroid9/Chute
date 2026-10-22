@@ -19,7 +19,7 @@ function capture(overrides: Partial<Capture>): Capture {
 }
 
 function row(id: string, status: LandedRow["status"]): LandedRow {
-  return { id, text: id, where: "Reminders", status, targets: [], problem: null, reminderTime: null };
+  return { id, text: id, content: id, where: "Reminders", status, targets: [], problem: null, reminderTime: null };
 }
 
 describe("startOfLocalDay", () => {
