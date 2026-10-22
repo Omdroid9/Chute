@@ -4,6 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import type { Capture } from "../../types";
 import {
   type AppendState,
+  dismissCaptureAppends,
   getAppendStatesFor,
   getCaptureLinksFor,
   getSetting,
@@ -15,12 +16,14 @@ import {
 } from "../../lib/db";
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
 import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
-import { formatClockTime } from "../../lib/reminderTime";
 import {
+  KIND_LABELS,
   countLanded,
+  formatWhen,
   primaryTarget,
   toLandedRow,
   type LandedCounts,
+  type LandedKind,
   type LandedRow,
   type LandedStatus,
 } from "./landedRows";
@@ -35,6 +38,8 @@ import {
   type LandedDay,
   type LandedViews,
 } from "./landedDays";
+import { parseStoredTimestamp } from "../../lib/timestamps";
+import { formatClockTime } from "../../lib/reminderTime";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -50,6 +55,7 @@ import {
   type Rect,
   type Stage,
 } from "./landedGeometry";
+import ChuteLogoStatic from "../ChuteLogoStatic";
 import "./landed.css";
 
 /** Pointer state polled natively: a non-key window gets no DOM hover. */
@@ -74,21 +80,17 @@ const REFRESH_MS = 60_000;
 /** A press can arrive both as a DOM event and from the poller; act once. */
 const PRESS_DEDUPE_MS = 350;
 const PRESS_DEDUPE_PX = 8;
+/** Rest on a row this long to open it up in place. */
+const EXPAND_DELAY_MS = 350;
+/** Room kept below the open panel for its shadow. */
+const PANEL_SHADOW_ROOM = 24;
 /** After the peek shows, keep resting this long and the panel opens. */
 const REST_OPEN_MS = 650;
 const COPIED_MS = 1400;
-/** Hovering a "more" strip scrolls the list, like an overlong macOS menu. */
-const AUTOSCROLL_PX = 5;
-const AUTOSCROLL_MS = 16;
 
-function ParachuteIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="4 4 52 52" aria-hidden className="landed-glyph">
-      <path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z" fill="currentColor" />
-      <path d="M16 27 L44 27 L34 46 L26 46 Z" fill="currentColor" />
-      <rect x="24" y="45" width="12" height="9" rx="2" fill="currentColor" />
-    </svg>
-  );
+/** Chute's mark (the website's sphere), wherever the panel stands for Chute. */
+function ChuteMark({ size }: { size: number }) {
+  return <ChuteLogoStatic size={size} className="landed-glyph" />;
 }
 
 function CheckIcon({ className = "" }: { className?: string }) {
@@ -108,25 +110,65 @@ function WarnIcon() {
   );
 }
 
-function ChevronIcon({ up }: { up: boolean }) {
-  return (
-    <svg width="10" height="10" viewBox="0 0 16 16" aria-hidden>
-      <path
-        d={up ? "M4 10l4-4 4 4" : "M4 6l4 4 4-4"}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const KIND_PATHS: Record<Exclude<LandedKind, "chute">, JSX.Element> = {
+  event: (
+    <>
+      <rect x="2.5" y="3.5" width="11" height="10" rx="2" />
+      <path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
+    </>
+  ),
+  reminder: (
+    <>
+      <circle cx="4.25" cy="5" r="1.6" />
+      <circle cx="4.25" cy="11" r="1.6" />
+      <path d="M7.75 5h5.75M7.75 11h5.75" />
+    </>
+  ),
+  note: (
+    <>
+      <rect x="3" y="2.5" width="10" height="11" rx="1.8" />
+      <path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" />
+    </>
+  ),
+  task: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
+      <path d="M5.3 8.2l1.9 1.9 3.6-4" />
+    </>
+  ),
+  page: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <path d="M6 10.75v-5.5l4 5.5v-5.5" />
+    </>
+  ),
+  message: <path d="M3 4.5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2V9a2 2 0 0 1-2 2H7.2L4.4 13.3V11.1A2 2 0 0 1 3 9.2z" />,
+};
 
-function StatusIcon({ status }: { status: LandedStatus }) {
-  if (status === "landed") return <CheckIcon />;
-  if (status === "failed") return <WarnIcon />;
-  return <span className={`landed-status landed-status-dot is-${status}`} aria-hidden />;
+/** What the capture became, with its status as a dot on the corner. */
+function KindIcon({ kind, status }: { kind: LandedKind; status: LandedStatus }) {
+  return (
+    <span className="landed-kind" data-status={status} title={KIND_LABELS[kind]}>
+      {kind === "chute" ? (
+        <ChuteMark size={14} />
+      ) : (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          aria-hidden
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {KIND_PATHS[kind]}
+        </svg>
+      )}
+      {status !== "kept" && <span className="landed-kind-badge" data-status={status} />}
+    </span>
+  );
 }
 
 function PeekStatus({ counts }: { counts: LandedCounts }) {
@@ -157,21 +199,25 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
   return <span className="landed-muted">Nothing yet</span>;
 }
 
-type ScrollDirection = "up" | "down";
-
-function scrollAt(element: Element | null | undefined): ScrollDirection | null {
-  const value = element?.closest<HTMLElement>("[data-scroll]")?.dataset.scroll;
-  return value === "up" || value === "down" ? value : null;
-}
-
 function dayAt(element: Element | null | undefined): LandedDay | null {
   const value = element?.closest<HTMLElement>("[data-day]")?.dataset.day;
   return LANDED_DAYS.find(({ day }) => day === value)?.day ?? null;
 }
 
+/** Puts the whole capture on the clipboard, to paste into the app you're in. */
+function CopyAction({ copied }: { copied: boolean }) {
+  return (
+    <span className={`landed-row-copy${copied ? " is-copied" : ""}`} data-action="copy">
+      {copied ? "Copied" : "Copy"}
+    </span>
+  );
+}
+
 function fixLabel(row: LandedRow, settingsOpened: boolean): string {
   if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
   if (row.problem?.kind === "reconnect") return "Fix";
+  // The original was deleted: retrying can't help. The text stays in Chute.
+  if (row.problem?.kind === "missing") return "Dismiss";
   return "Retry";
 }
 
@@ -180,16 +226,29 @@ export default function LandedWindow() {
   const [stage, setStage] = useState<Stage>("idle");
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const hoverRef = useRef<string | null>(null);
+  const expandTimer = useRef<number | undefined>(undefined);
+
+  /** Hover a row (or none). Resting on it opens it up after a moment; moving on closes it. */
+  const hoverRow = useCallback((id: string | null) => {
+    setHoverId(id);
+    if (id === hoverRef.current) return;
+    hoverRef.current = id;
+    window.clearTimeout(expandTimer.current);
+    expandTimer.current = undefined;
+    setExpandedId(null);
+    if (id) {
+      expandTimer.current = window.setTimeout(() => setExpandedId(id), EXPAND_DELAY_MS);
+    }
+  }, []);
   const [hoverDay, setHoverDay] = useState<LandedDay | null>(null);
-  const [hoverScroll, setHoverScroll] = useState<ScrollDirection | null>(null);
-  /** Rows hidden above and below the list's visible part. */
-  const [hidden, setHidden] = useState({ above: 0, below: 0 });
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   // Which day the open panel shows; back to Today whenever it closes.
   const [day, setDay] = useState<LandedDay>("today");
   const [views, setViews] = useState<LandedViews>(EMPTY_VIEWS);
   /** Tomorrow's due time per capture, e.g. "9:00 AM". */
   const [dueTimes, setDueTimes] = useState<ReadonlyMap<string, string>>(new Map());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
   const [tipHeight, setTipHeight] = useState(96);
@@ -201,6 +260,8 @@ export default function LandedWindow() {
 
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // More rows below the fold (the panel scrolls once the day outgrows it).
+  const [moreBelow, setMoreBelow] = useState(false);
   const tipRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Stage>("idle");
   const pointerRef = useRef<Pointer | null>(null);
@@ -251,9 +312,8 @@ export default function LandedWindow() {
       stageRef.current = next;
       setStage(next);
       if (next !== "open") {
-        setHoverId(null);
+        hoverRow(null);
         setHoverDay(null);
-        setHoverScroll(null);
       }
       if (next === "idle") setDay("today");
       if (next !== "conf") {
@@ -262,7 +322,7 @@ export default function LandedWindow() {
       }
       if (next === "peek" || next === "open") markTipSeen();
     },
-    [markTipSeen],
+    [hoverRow, markTipSeen],
   );
 
   const close = useCallback(
@@ -334,6 +394,11 @@ export default function LandedWindow() {
           close(true);
           return;
         }
+        if (problem?.kind === "missing") {
+          await dismissCaptureAppends(row.id);
+          await refresh();
+          return;
+        }
         // Clear the errors so the row reads as on its way, then ask for a sync.
         await setCaptureSyncError(row.id, null);
         await retryCaptureAppends(row.id);
@@ -348,30 +413,6 @@ export default function LandedWindow() {
   );
 
   /** One press on the canvas at (x, y), from either the DOM or the poller. */
-  /** Hover from the poller's pointer position: a non-key window gets no DOM hover. */
-  const hoverAt = useCallback((x: number, y: number) => {
-    const element = document.elementFromPoint(x, y);
-    setHoverId(element?.closest<HTMLElement>("[data-row]")?.dataset.row ?? null);
-    setHoverDay(dayAt(element));
-    setHoverScroll(scrollAt(element));
-  }, []);
-
-  /** Count the rows scrolled out of view, for the "more" strips. */
-  const measureHidden = useCallback(() => {
-    const list = listRef.current;
-    let above = 0;
-    let below = 0;
-    if (list) {
-      const top = list.scrollTop;
-      const bottom = top + list.clientHeight;
-      for (const item of Array.from(list.children) as HTMLElement[]) {
-        if (item.offsetTop < top - 1) above += 1;
-        else if (item.offsetTop + item.offsetHeight > bottom + 1) below += 1;
-      }
-    }
-    setHidden((current) => (current.above === above && current.below === below ? current : { above, below }));
-  }, []);
-
   const press = useCallback(
     (x: number, y: number) => {
       const now = performance.now();
@@ -394,17 +435,9 @@ export default function LandedWindow() {
         if (next) setDay(next);
         return;
       }
-      if (action === "scroll") {
-        const list = listRef.current;
-        const direction = scrollAt(element);
-        if (list && direction) {
-          list.scrollBy({ top: (direction === "down" ? 1 : -1) * list.clientHeight * 0.8, behavior: "smooth" });
-        }
-        return;
-      }
       if (action === "copy" && row) {
         // Onto the clipboard, ready to paste into the app being worked in.
-        void invoke("landed_copy_text", { text: row.content })
+        void invoke("landed_copy_text", { text: row.fullText })
           .then(() => {
             clearTimer(copiedTimer);
             setCopiedId(row.id);
@@ -426,6 +459,11 @@ export default function LandedWindow() {
           await invoke("show_capture_window");
           await emit("chute://add-to", { captureId: row.id });
         })().catch((error) => console.error("Landed: could not start adding", error));
+        close(true);
+        return;
+      }
+      if (action === "library") {
+        void invoke("show_library_window").catch((error) => console.error("Landed: no Library", error));
         close(true);
         return;
       }
@@ -478,9 +516,8 @@ export default function LandedWindow() {
       if (!pointer.inside) {
         clearTimer(peekTimer);
         clearTimer(restTimer);
-        setHoverId(null);
+        hoverRow(null);
         setHoverDay(null);
-        setHoverScroll(null);
         suppressUntilLeave.current = false;
         if ((current === "peek" || current === "open") && closeTimer.current === undefined) {
           closeTimer.current = window.setTimeout(() => {
@@ -501,7 +538,9 @@ export default function LandedWindow() {
       }
 
       if (current === "open") {
-        hoverAt(pointer.x, pointer.y);
+        const element = document.elementFromPoint(pointer.x, pointer.y);
+        hoverRow(element?.closest<HTMLElement>("[data-row]")?.dataset.row ?? null);
+        setHoverDay(dayAt(element));
         return;
       }
 
@@ -565,7 +604,7 @@ export default function LandedWindow() {
       clearTimer(copiedTimer);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
-  }, [close, go, hoverAt, openPanel, press, refresh, showConfirmation]);
+  }, [close, go, hoverRow, openPanel, press, refresh, showConfirmation]);
 
   // Read the user's settings, then show the panel (it starts hidden natively).
   useEffect(() => {
@@ -596,45 +635,40 @@ export default function LandedWindow() {
     if (stage === "peek" || stage === "open") void refresh();
   }, [stage, refresh]);
 
+  const updateListEdges = useCallback(() => {
+    const list = listRef.current;
+    setMoreBelow(Boolean(list && list.scrollHeight - list.clientHeight - list.scrollTop > 4));
+  }, []);
+
+  const onListScroll = useCallback(() => {
+    updateListEdges();
+    const pointer = pointerRef.current;
+    if (pointer?.inside && stageRef.current === "open") {
+      const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
+      hoverRow(row?.dataset.row ?? null);
+    }
+  }, [hoverRow, updateListEdges]);
+
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
   const rows = views[day];
   // The peek counts today, but any failure the panel can show needs you.
   const failed = failedIds(views);
   const counts = { ...countLanded(views.today), failed: failed.size };
   const attention = failed.size > 0;
-  const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
   const isOpen = stage === "open";
-  // Tall enough for the whole list when it fits; past that the list scrolls.
-  const panelMaxHeight = geometry ? geometry.height - 24 - panelTop - 8 : undefined;
+  const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
     if (!panel || !geometry) return;
-    setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - 24));
-  }, [rows, geometry, panelTop, settingsOpened]);
+    setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
+    updateListEdges();
+  }, [rows, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
 
   // Each day, and each opening, starts at the top of the list.
   useLayoutEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [day, isOpen]);
-
-  useLayoutEffect(() => {
-    measureHidden();
-  }, [rows, day, isOpen, panelHeight, measureHidden]);
-
-  // The list moved under a still pointer (scrolled, or a strip came or went).
-  useLayoutEffect(() => {
-    const pointer = pointerRef.current;
-    if (pointer?.inside && stageRef.current === "open") hoverAt(pointer.x, pointer.y);
-  }, [hidden, hoverAt]);
-
-  useEffect(() => {
-    if (!hoverScroll || !isOpen) return;
-    const interval = window.setInterval(() => {
-      listRef.current?.scrollBy({ top: (hoverScroll === "down" ? 1 : -1) * AUTOSCROLL_PX });
-    }, AUTOSCROLL_MS);
-    return () => window.clearInterval(interval);
-  }, [hoverScroll, isOpen]);
 
   useLayoutEffect(() => {
     if (tipVisible && tipRef.current) setTipHeight(Math.ceil(tipRef.current.offsetHeight));
@@ -686,17 +720,25 @@ export default function LandedWindow() {
       <div className="landed-shape" style={shapeStyle}>
         <div className="landed-clip">
           {geometry.hasNotch ? (
-            <span className="landed-attention-dot" aria-hidden />
+            // Balanced ears: Chute's mark on the left, the amber dot on the right.
+            <>
+              <span className="landed-attention-mark" aria-hidden>
+                <ChuteMark size={10} />
+              </span>
+              <span className="landed-attention-dot" aria-hidden />
+            </>
           ) : (
             <div className="landed-tab">
-              <ParachuteIcon size={near ? 13 : 11} />
-              {attention && <span className="landed-dot is-failed" />}
+              <span className="landed-tab-mark">
+                <ChuteMark size={near ? 13 : 11} />
+                {attention && <span className="landed-tab-badge" aria-hidden />}
+              </span>
             </div>
           )}
 
           <div className="landed-peek" style={peekStyle}>
             <span className="landed-peek-count">
-              <ParachuteIcon size={13} />
+              <ChuteMark size={13} />
               {counts.total} landed
             </span>
             <span className="landed-peek-status">
@@ -711,7 +753,11 @@ export default function LandedWindow() {
 
           <div
             className="landed-panel"
-            style={{ top: panelTop, width: PANEL_WIDTH, maxHeight: panelMaxHeight }}
+            style={{
+              top: panelTop,
+              width: PANEL_WIDTH,
+              maxHeight: geometry.height - PANEL_SHADOW_ROOM - panelTop - 8,
+            }}
             ref={panelRef}
           >
             <div className="landed-head">
@@ -737,71 +783,77 @@ export default function LandedWindow() {
             {rows.length === 0 ? (
               <p className="landed-empty">{EMPTY_TEXT[day]}</p>
             ) : (
-              <div className="landed-scroll">
-                <ul className="landed-rows" ref={listRef} onScroll={measureHidden}>
-                  {rows.map((row) => (
-                    <li
-                      key={row.id}
-                      data-row={row.id}
-                      className={`landed-row is-${row.status}${hoverId === row.id ? " is-hover" : ""}`}
-                    >
-                      <StatusIcon status={row.status} />
-                      <span className="landed-row-main">
+              <ul
+                className="landed-rows"
+                ref={listRef}
+                onScroll={onListScroll}
+                data-more={moreBelow ? "" : undefined}
+              >
+                {rows.map((row) => (
+                  <li
+                    key={row.id}
+                    data-row={row.id}
+                    className={[
+                      "landed-row",
+                      `is-${row.status}`,
+                      hoverId === row.id ? "is-hover" : "",
+                      expandedId === row.id ? "is-expanded" : "",
+                    ].join(" ")}
+                  >
+                    <KindIcon kind={row.kind} status={row.status} />
+                    <span className="landed-row-main">
+                      {expandedId === row.id ? (
+                        <>
+                          <span className="landed-row-full">{row.fullText}</span>
+                          <span className="landed-row-meta">
+                            <span>
+                              {[KIND_LABELS[row.kind], formatWhen(row.reminderTime), row.status === "kept" ? null : row.where]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                            <span className="landed-row-actions">
+                              <CopyAction copied={copiedId === row.id} />
+                              {row.status !== "failed" && (
+                                <span className="landed-row-add" data-action="add">
+                                  Add
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </>
+                      ) : (
                         <span className="landed-row-text">{row.text}</span>
-                        {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+                      )}
+                      {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+                    </span>
+                    {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
+                      <span className="landed-row-fix" data-action="fix">
+                        {fixLabel(row, settingsOpened.has(row.id))}
                       </span>
+                    ) : (
                       <span className="landed-row-end">
-                        {(hoverId === row.id || copiedId === row.id) && (
-                          <span
-                            className={`landed-row-copy${copiedId === row.id ? " is-copied" : ""}`}
-                            data-action="copy"
-                          >
-                            {copiedId === row.id ? "Copied" : "Copy"}
+                        {(hoverId === row.id || copiedId === row.id) && <CopyAction copied={copiedId === row.id} />}
+                        {hoverId === row.id && (
+                          <span className="landed-row-add" data-action="add">
+                            Add
                           </span>
                         )}
-                        {row.status === "failed" ? (
-                          <span className="landed-row-fix" data-action="fix">
-                            {fixLabel(row, settingsOpened.has(row.id))}
-                          </span>
-                        ) : (
-                          <>
-                            {hoverId === row.id && (
-                              <span className="landed-row-add" data-action="add">
-                                Add
-                              </span>
-                            )}
-                            {day === "tomorrow" ? (
-                              <span className="landed-row-time">{dueTimes.get(row.id)}</span>
-                            ) : (
-                              <span className="landed-row-where">{row.where}</span>
-                            )}
-                          </>
-                        )}
+                        <span className="landed-row-where">{row.where}</span>
                       </span>
-                    </li>
-                  ))}
-                </ul>
-                {hidden.above > 0 && (
-                  <span
-                    className={`landed-more is-up${hoverScroll === "up" ? " is-hover" : ""}`}
-                    data-action="scroll"
-                    data-scroll="up"
-                  >
-                    <ChevronIcon up />
-                    {hidden.above} more
-                  </span>
-                )}
-                {hidden.below > 0 && (
-                  <span
-                    className={`landed-more is-down${hoverScroll === "down" ? " is-hover" : ""}`}
-                    data-action="scroll"
-                    data-scroll="down"
-                  >
-                    <ChevronIcon up={false} />
-                    {hidden.below} more
-                  </span>
-                )}
-              </div>
+                    )}
+                    {/* When it was captured; on Tomorrow, when it's due. */}
+                    {day === "tomorrow" ? (
+                      <time className="landed-row-time is-due" dateTime={row.reminderTime ?? undefined}>
+                        {dueTimes.get(row.id)}
+                      </time>
+                    ) : (
+                      <time className="landed-row-time" dateTime={row.createdAt}>
+                        {formatClockTime(parseStoredTimestamp(row.createdAt))}
+                      </time>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>

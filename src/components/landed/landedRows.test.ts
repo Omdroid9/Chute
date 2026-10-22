@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { SyncConfig } from "../../lib/sync/syncEngine";
 import { describeDestinations } from "../../lib/sync/destinations";
-import { countLanded, primaryTarget, toLandedRow } from "./landedRows";
+import { countLanded, formatWhen, primaryTarget, toLandedRow } from "./landedRows";
 
 const CONFIG: SyncConfig = {
   slackWebhookUrl: "https://hooks.slack.com/services/x",
@@ -52,8 +52,6 @@ describe("toLandedRow", () => {
       { destination: "reminders", externalId: "x-apple-reminder://r1" },
     ]);
     expect(row).toMatchObject({ text: "call mom tomorrow at 5pm", where: "Reminders", status: "landed" });
-    // Copy takes the capture as written, line break included.
-    expect(row.content).toBe("call mom\n tomorrow at 5pm");
     expect(row.targets[0].link?.externalId).toBe("x-apple-reminder://r1");
   });
 
@@ -143,5 +141,49 @@ describe("countLanded", () => {
       toLandedRow(makeCapture({ id: "c", target_slack: 1 }), CONFIG),
     ];
     expect(countLanded(rows)).toEqual({ total: 3, failed: 1, pending: 1 });
+  });
+});
+
+describe("what a capture became", () => {
+  it("is the kind of the first place it landed", () => {
+    const row = toLandedRow(
+      makeCapture({ target_apple_calendar: 1, target_apple_reminders: 1, synced_apple_reminders: 1, reminder_time: "2026-10-20T18:00:00" }),
+      CONFIG,
+    );
+    expect(row.kind).toBe("note");
+  });
+
+  it("is an event when nothing has landed yet but a calendar is next", () => {
+    const row = toLandedRow(makeCapture({ target_apple_calendar: 1, reminder_time: "2026-10-20T18:00:00" }), CONFIG);
+    expect(row.kind).toBe("event");
+  });
+
+  it("stays in Chute when there's nowhere to send it", () => {
+    expect(toLandedRow(makeCapture(), CONFIG).kind).toBe("chute");
+  });
+
+  it("keeps the full text, line breaks and additions included", () => {
+    const row = toLandedRow(makeCapture({ content: "Call with Erin\nand call jatin\n" }), CONFIG);
+    expect(row.text).toBe("Call with Erin and call jatin");
+    expect(row.fullText).toBe("Call with Erin\nand call jatin");
+  });
+});
+
+describe("formatWhen", () => {
+  const now = new Date(2026, 9, 20, 11, 0); // Tue Oct 20, 11:00 local
+
+  it("says today, tomorrow and yesterday", () => {
+    expect(formatWhen("2026-10-20T18:00:00", now)).toMatch(/^Today 6:00\sPM$/);
+    expect(formatWhen("2026-10-21T09:30:00", now)).toMatch(/^Tomorrow 9:30\sAM$/);
+    expect(formatWhen("2026-10-19T09:30:00", now)).toMatch(/^Yesterday /);
+  });
+
+  it("uses the weekday this week and the date beyond", () => {
+    expect(formatWhen("2026-10-23T16:00:00", now)).toMatch(/^Fri 4:00\sPM$/);
+    expect(formatWhen("2026-11-03T16:00:00", now)).toMatch(/^Nov 3, 4:00\sPM$/);
+  });
+
+  it("has nothing to say without a time", () => {
+    expect(formatWhen(null, now)).toBeNull();
   });
 });

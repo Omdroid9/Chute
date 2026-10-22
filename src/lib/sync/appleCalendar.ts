@@ -77,7 +77,10 @@ export async function createAppleCalendarEvent(
 /** Re-export so routing can share the same event/task heuristic. */
 export { classifyTimedEvent };
 
-/** Add a line to the notes of a Calendar event Chute created earlier (by uid). */
-export async function appendToAppleCalendarEvent(uid: string, text: string): Promise<void> {
-  await invoke("append_to_calendar_event", { uid, text });
+/**
+ * Add a line to the notes of a Calendar event Chute created earlier (by uid).
+ * `calendar` is where Chute writes events ("" = first writable), tried first.
+ */
+export async function appendToAppleCalendarEvent(uid: string, text: string, calendar = ""): Promise<void> {
+  await invoke("append_to_calendar_event", { uid, text, calendar });
 }

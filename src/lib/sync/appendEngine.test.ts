@@ -5,11 +5,14 @@ import type { SyncConfig } from "./syncEngine";
 vi.mock("../db", () => ({
   getCaptureById: vi.fn(),
   getCaptureLinks: vi.fn(),
+  getLinkedExternalIds: vi.fn(),
+  saveCaptureLinks: vi.fn(),
   listPendingAppends: vi.fn(),
   markAppendDone: vi.fn(),
   markAppendFailed: vi.fn(),
   setSetting: vi.fn(),
 }));
+vi.mock("./appleItems", () => ({ findAppleItem: vi.fn() }));
 vi.mock("./appleNotes", () => ({ appendToAppleNote: vi.fn(), createAppleNote: vi.fn() }));
 vi.mock("./appleRemindersSync", () => ({ appendToAppleReminder: vi.fn(), createAppleReminder: vi.fn() }));
 vi.mock("./appleCalendar", () => ({ appendToAppleCalendarEvent: vi.fn(), createAppleCalendarEvent: vi.fn() }));
@@ -29,6 +32,7 @@ const { appendToAppleCalendarEvent } = await import("./appleCalendar");
 const { sendSlackFollowUp } = await import("./slack");
 const { editDiscordMessage } = await import("./discord");
 const { appendNotionAddition } = await import("./notion");
+const { findAppleItem } = await import("./appleItems");
 
 const CONFIG: SyncConfig = {
   slackWebhookUrl: "https://hooks.slack.com/services/x",
@@ -181,5 +185,84 @@ describe("runAppendPass", () => {
     await runAppendPass({});
     expect(db.markAppendDone).not.toHaveBeenCalled();
     expect(db.markAppendFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe("additions to captures sent before Chute kept ids", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const erin = makeCapture({
+    id: "erin",
+    content: "Call with Erin\nand call jatin",
+    created_at: "2026-10-19 20:29:52",
+    reminder_time: "2026-10-19T18:00:00",
+    target_apple_calendar: 1,
+    synced_apple_calendar: 1,
+  });
+
+  it("finds the original event, remembers it, and adds to it", async () => {
+    vi.mocked(db.listPendingAppends).mockResolvedValue([
+      { id: "a1", captureId: "erin", destination: "apple_calendar", content: "and call jatin", attempts: 1, error: "x" },
+    ]);
+    vi.mocked(db.getCaptureById).mockResolvedValue(erin);
+    vi.mocked(db.getCaptureLinks).mockResolvedValue([]);
+    vi.mocked(db.getLinkedExternalIds).mockResolvedValue(["OTHER-UID"]);
+    vi.mocked(findAppleItem).mockResolvedValue("EVENT-UID");
+
+    await runAppendPass(CONFIG);
+
+    expect(findAppleItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destination: "apple_calendar",
+        title: "Call with Erin",
+        container: "",
+        start: "2026-10-19T18:00:00",
+        excluded: ["OTHER-UID"],
+      }),
+    );
+    // The capture's UTC time, as local time, bounds how old the event can be.
+    const notBefore = vi.mocked(findAppleItem).mock.calls[0][0].notBefore;
+    expect(new Date(notBefore).getTime()).toBe(new Date("2026-10-19T20:29:52Z").getTime());
+    expect(db.saveCaptureLinks).toHaveBeenCalledWith("erin", [
+      { destination: "apple_calendar", externalId: "EVENT-UID" },
+    ]);
+    expect(appendToAppleCalendarEvent).toHaveBeenCalledWith("EVENT-UID", "and call jatin", "");
+    expect(db.markAppendDone).toHaveBeenCalledWith("a1");
+  });
+
+  it("reports a missing event when nothing matches", async () => {
+    vi.mocked(db.listPendingAppends).mockResolvedValue([
+      { id: "a1", captureId: "erin", destination: "apple_calendar", content: "and call jatin", attempts: 0, error: null },
+    ]);
+    vi.mocked(db.getCaptureById).mockResolvedValue(erin);
+    vi.mocked(db.getCaptureLinks).mockResolvedValue([]);
+    vi.mocked(db.getLinkedExternalIds).mockResolvedValue([]);
+    vi.mocked(findAppleItem).mockResolvedValue("");
+
+    await runAppendPass(CONFIG);
+
+    expect(db.saveCaptureLinks).not.toHaveBeenCalled();
+    expect(db.markAppendFailed).toHaveBeenCalledWith(
+      "a1",
+      "Apple Calendar: Couldn't find the original event in Calendar.",
+    );
+  });
+
+  it("looks up a note by its first line, without list markers", async () => {
+    vi.mocked(db.listPendingAppends).mockResolvedValue([
+      { id: "a1", captureId: "n", destination: "apple_notes", content: "more", attempts: 0, error: null },
+    ]);
+    vi.mocked(db.getCaptureById).mockResolvedValue(
+      makeCapture({ id: "n", content: "- buy milk\n- eggs", target_apple_reminders: 1, synced_apple_reminders: 1 }),
+    );
+    vi.mocked(db.getCaptureLinks).mockResolvedValue([]);
+    vi.mocked(db.getLinkedExternalIds).mockResolvedValue([]);
+    vi.mocked(findAppleItem).mockResolvedValue("NOTE-1");
+
+    await runAppendPass({ ...CONFIG, appleNotesEnabled: true, appleNotesFolder: "Chute" });
+
+    expect(findAppleItem).toHaveBeenCalledWith(
+      expect.objectContaining({ destination: "apple_notes", title: "buy milk", container: "Chute" }),
+    );
   });
 });

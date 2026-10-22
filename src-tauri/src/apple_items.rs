@@ -159,43 +159,71 @@ const APPEND_TO_NOTE: &str = r#"on run argv
   return "ok"
 end run"#;
 
-// The event is addressed by id (its uid) in each calendar in turn; a by-id
+// The event is addressed by id (its uid): first in the calendar Chute writes
+// to (named, else first writable), then in each other calendar. A by-id
 // lookup that misses just errors, unlike `whose`, which can crash Calendar.
 #[cfg(target_os = "macos")]
-const APPEND_TO_EVENT: &str = r#"on run argv
+const APPEND_TO_EVENT: &str = r#"on addTo(theCal, eventUid, addition)
+  tell application "Calendar"
+    try
+      set oldNotes to description of (event id eventUid of theCal)
+    on error errMsg number errNum
+      if errNum is -1743 then error errMsg number errNum
+      return false
+    end try
+    if oldNotes is missing value then set oldNotes to ""
+    if oldNotes is "" then
+      set description of (event id eventUid of theCal) to addition
+    else
+      set description of (event id eventUid of theCal) to oldNotes & linefeed & addition
+    end if
+  end tell
+  return true
+end addTo
+
+on run argv
   set eventUid to item 1 of argv
   set addition to item 2 of argv
+  set calName to item 3 of argv
   tell application "Calendar"
-    repeat with aCal in every calendar
-      set found to false
-      try
-        set oldNotes to description of (event id eventUid of aCal)
-        set found to true
-      on error errMsg number errNum
-        if errNum is -1743 then error errMsg number errNum
-      end try
-      if found then
-        if oldNotes is missing value then set oldNotes to ""
-        if oldNotes is "" then
-          set description of (event id eventUid of aCal) to addition
-        else
-          set description of (event id eventUid of aCal) to oldNotes & linefeed & addition
+    set allCals to every calendar
+    set preferred to missing value
+    repeat with aCal in allCals
+      if calName is "" then
+        if (writable of aCal) is true then
+          set preferred to contents of aCal
+          exit repeat
         end if
-        return "ok"
+      else if (name of aCal) is calName then
+        set preferred to contents of aCal
+        exit repeat
       end if
     end repeat
   end tell
+  if preferred is not missing value then
+    if my addTo(preferred, eventUid, addition) then return "ok"
+  end if
+  repeat with aCal in allCals
+    if my addTo(contents of aCal, eventUid, addition) then return "ok"
+  end repeat
   error "Couldn't find the event in Calendar."
 end run"#;
 
 #[cfg(target_os = "macos")]
-async fn run_append(script: &'static str, id: String, addition: String) -> Result<(), String> {
-  if id.trim().is_empty() {
+async fn run_append(script: &'static str, args: Vec<String>) -> Result<(), String> {
+  if args.first().is_none_or(|id| id.trim().is_empty()) {
     return Err("No item to add to.".to_string());
   }
-  tauri::async_runtime::spawn_blocking(move || run_osascript(script, &[id, addition]).map(|_| ()))
+  let started = std::time::Instant::now();
+  let result = tauri::async_runtime::spawn_blocking(move || run_osascript(script, &args).map(|_| ()))
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+  eprintln!(
+    "[apple] append: {} ms, {}",
+    started.elapsed().as_millis(),
+    if result.is_ok() { "ok" } else { "failed" }
+  );
+  result
 }
 
 /// Add a line to a reminder's notes.
@@ -203,7 +231,7 @@ async fn run_append(script: &'static str, id: String, addition: String) -> Resul
 pub async fn append_to_reminder(id: String, text: String) -> Result<(), String> {
   #[cfg(target_os = "macos")]
   {
-    run_append(APPEND_TO_REMINDER, id, text).await
+    run_append(APPEND_TO_REMINDER, vec![id, text]).await
   }
   #[cfg(not(target_os = "macos"))]
   {
@@ -217,7 +245,7 @@ pub async fn append_to_reminder(id: String, text: String) -> Result<(), String> 
 pub async fn append_to_apple_note(id: String, html: String) -> Result<(), String> {
   #[cfg(target_os = "macos")]
   {
-    run_append(APPEND_TO_NOTE, id, html).await
+    run_append(APPEND_TO_NOTE, vec![id, html]).await
   }
   #[cfg(not(target_os = "macos"))]
   {
@@ -226,20 +254,221 @@ pub async fn append_to_apple_note(id: String, html: String) -> Result<(), String
   }
 }
 
-/// Add a line to a Calendar event's notes.
+/// Add a line to a Calendar event's notes. `calendar` is the calendar Chute
+/// writes to ("" = first writable), searched first.
 #[tauri::command]
-pub async fn append_to_calendar_event(uid: String, text: String) -> Result<(), String> {
+pub async fn append_to_calendar_event(uid: String, text: String, calendar: Option<String>) -> Result<(), String> {
   #[cfg(target_os = "macos")]
   {
     // Calendar refuses scripting until it's running (-600); start it hidden.
     let _ = std::process::Command::new("open")
       .args(["-g", "-j", "-a", "Calendar"])
       .status();
-    run_append(APPEND_TO_EVENT, uid, text).await
+    run_append(APPEND_TO_EVENT, vec![uid, text, calendar.unwrap_or_default()]).await
   }
   #[cfg(not(target_os = "macos"))]
   {
-    let _ = (uid, text);
+    let _ = (uid, text, calendar);
     Err("Apple Calendar is only available on macOS.".to_string())
+  }
+}
+
+// Finding an item Chute created before it kept ids ("capture_links"): match
+// the title (AppleScript compares case-insensitively), skip items already
+// matched to other captures, and only consider items made after the capture,
+// earliest first, so identical captures map to their items in order. Bulk
+// property reads (`name of every reminder`) are one Apple event each; `whose`
+// lookups are avoided because they crash these apps on macOS 26.
+#[cfg(target_os = "macos")]
+const DATE_HANDLER: &str = r#"on makeDate(y, mo, d, h, mi, s)
+  set theDate to current date
+  set day of theDate to 1
+  set year of theDate to y
+  set month of theDate to mo
+  set day of theDate to d
+  set hours of theDate to h
+  set minutes of theDate to mi
+  set seconds of theDate to s
+  return theDate
+end makeDate
+
+on pick(theTitles, theIds, theDates, wantTitle, notBefore, excluded)
+  set bestId to ""
+  set bestDate to missing value
+  repeat with i from 1 to count of theTitles
+    try
+      if (item i of theTitles) is wantTitle then
+        set candidate to item i of theIds
+        set made to item i of theDates
+        if excluded does not contain candidate and made is greater than (notBefore - 120) then
+          if bestDate is missing value or made is less than bestDate then
+            set bestDate to made
+            set bestId to candidate
+          end if
+        end if
+      end if
+    end try
+  end repeat
+  return bestId
+end pick
+"#;
+
+#[cfg(target_os = "macos")]
+const FIND_REMINDER: &str = r#"on run argv
+  set notBefore to my makeDate((item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer, (item 8 of argv) as integer)
+  tell application "Reminders"
+    set theList to missing value
+    repeat with aList in every list
+      if (name of aList) is (item 2 of argv) then
+        set theList to aList
+        exit repeat
+      end if
+    end repeat
+    if theList is missing value then return ""
+    set theTitles to name of every reminder of theList
+    set theIds to id of every reminder of theList
+    set theDates to creation date of every reminder of theList
+  end tell
+  return my pick(theTitles, theIds, theDates, item 1 of argv, notBefore, paragraphs of (item 9 of argv))
+end run"#;
+
+#[cfg(target_os = "macos")]
+const FIND_NOTE: &str = r#"on run argv
+  set notBefore to my makeDate((item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer, (item 8 of argv) as integer)
+  tell application "Notes"
+    set theFolder to missing value
+    repeat with aFolder in every folder
+      if (name of aFolder) is (item 2 of argv) then
+        set theFolder to aFolder
+        exit repeat
+      end if
+    end repeat
+    if theFolder is missing value then return ""
+    set theTitles to name of every note of theFolder
+    set theIds to id of every note of theFolder
+    set theDates to creation date of every note of theFolder
+  end tell
+  return my pick(theTitles, theIds, theDates, item 1 of argv, notBefore, paragraphs of (item 9 of argv))
+end run"#;
+
+// Events have no creation date; the modification ("stamp") date stands in.
+// Only the calendar Chute writes to is searched (the named one, else the
+// first writable one, as create_apple_calendar_event picks), and only titles
+// and starts are read in bulk: Calendar is slow to script, so reading every
+// property of every event in every calendar took a minute.
+#[cfg(target_os = "macos")]
+const FIND_EVENT: &str = r#"on run argv
+  set notBefore to my makeDate((item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer, (item 8 of argv) as integer)
+  set startAt to my makeDate((item 10 of argv) as integer, (item 11 of argv) as integer, (item 12 of argv) as integer, (item 13 of argv) as integer, (item 14 of argv) as integer, (item 15 of argv) as integer)
+  set wantTitle to item 1 of argv
+  set calName to item 2 of argv
+  set excluded to paragraphs of (item 9 of argv)
+  tell application "Calendar"
+    set targetCal to missing value
+    repeat with aCal in every calendar
+      if calName is "" then
+        if (writable of aCal) is true then
+          set targetCal to aCal
+          exit repeat
+        end if
+      else if (name of aCal) is calName then
+        set targetCal to aCal
+        exit repeat
+      end if
+    end repeat
+    if targetCal is missing value then return ""
+    set theTitles to summary of every event of targetCal
+    set theStarts to start date of every event of targetCal
+  end tell
+  set bestId to ""
+  set bestDate to missing value
+  repeat with i from 1 to count of theTitles
+    try
+      if (item i of theTitles) is wantTitle then
+        set offsetSeconds to (item i of theStarts) - startAt
+        if offsetSeconds < 60 and offsetSeconds > -60 then
+          tell application "Calendar"
+            set candidate to uid of event i of targetCal
+            set made to stamp date of event i of targetCal
+          end tell
+          if excluded does not contain candidate and made is greater than (notBefore - 120) then
+            if bestDate is missing value or made is less than bestDate then
+              set bestDate to made
+              set bestId to candidate
+            end if
+          end if
+        end if
+      end if
+    end try
+  end repeat
+  return bestId
+end run"#;
+
+#[cfg(target_os = "macos")]
+fn date_args(value: &str) -> Result<Vec<String>, String> {
+  let (year, month, day, hour, minute, second) = crate::commands::parse_local_iso(value)
+    .ok_or_else(|| format!("Invalid date: {value}"))?;
+  Ok(vec![
+    year.to_string(),
+    month.to_string(),
+    day.to_string(),
+    hour.to_string(),
+    minute.to_string(),
+    second.to_string(),
+  ])
+}
+
+/// Find the item a capture became when Chute didn't keep its id. `container`
+/// is the Reminders list / Notes folder / Calendar name ("" = writable
+/// calendars); `not_before` and `start` are local ISO datetimes; `excluded`
+/// are ids already matched to other captures. Resolves to "" if nothing fits.
+#[tauri::command]
+pub async fn find_apple_item(
+  destination: String,
+  title: String,
+  container: String,
+  not_before: String,
+  start: Option<String>,
+  excluded: Vec<String>,
+) -> Result<String, String> {
+  #[cfg(target_os = "macos")]
+  {
+    let mut args = vec![title, container];
+    args.extend(date_args(&not_before)?);
+    args.push(excluded.join("\n"));
+    let (script, app) = match destination.as_str() {
+      "reminders" => (FIND_REMINDER, "Reminders"),
+      "apple_notes" => (FIND_NOTE, "Notes"),
+      "apple_calendar" => {
+        let start = start.ok_or_else(|| "A Calendar lookup needs the event's start.".to_string())?;
+        args.extend(date_args(&start)?);
+        (FIND_EVENT, "Calendar")
+      }
+      other => return Err(format!("Not an Apple app destination: {other}")),
+    };
+    let full = format!("{DATE_HANDLER}\n{script}");
+    let started = std::time::Instant::now();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+      // These apps refuse scripting until they're running (-600); start hidden.
+      let _ = std::process::Command::new("open").args(["-g", "-j", "-a", app]).status();
+      run_osascript(&full, &args)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    eprintln!(
+      "[apple] find in {app}: {} ms, {}",
+      started.elapsed().as_millis(),
+      match &result {
+        Ok(id) if id.is_empty() => "no match".to_string(),
+        Ok(_) => "found".to_string(),
+        Err(error) => format!("error: {error}"),
+      }
+    );
+    result
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (destination, title, container, not_before, start, excluded);
+    Err("Apple apps are only available on macOS.".to_string())
   }
 }

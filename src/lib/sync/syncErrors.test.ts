@@ -32,4 +32,13 @@ describe("describeSyncError", () => {
     expect(problem?.kind).toBe("other");
     expect(problem!.message.length).toBeLessThanOrEqual(90);
   });
+
+  it("says when the original item is gone", () => {
+    expect(describeSyncError("Apple Calendar: Couldn't find the original event in Calendar.")).toEqual({
+      kind: "missing",
+      app: "Calendar",
+      message: "Couldn't find the original in Calendar",
+    });
+    expect(describeSyncError("Reminders: Can't get reminder id \"x\". (-1728)")?.kind).toBe("missing");
+  });
 });

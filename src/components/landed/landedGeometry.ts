@@ -32,13 +32,11 @@ export interface ShapeInput {
 export const EAR = 100;
 /** Ears the resting notch grows to hold the amber "needs you" dot. */
 export const ATTENTION_EAR = 16;
-export const PANEL_WIDTH = 380;
+export const PANEL_WIDTH = 460;
 /** Height of the strip the confirmation drops below the notch. */
 export const CONF_DROP = 30;
 export const TAB = { width: 46, height: 14 };
 export const TAB_NEAR = { width: 64, height: 18 };
-/** Extra tab width for the amber dot. */
-export const TAB_DOT = 12;
 export const PILL = { width: 250, height: 30 };
 export const CONF_PILL = { width: 270, height: 30 };
 export const TIP_WIDTH = 260;
@@ -68,7 +66,8 @@ export function shapeFor({ stage, geometry, near, attention, panelHeight }: Shap
       }
       {
         const size = near ? TAB_NEAR : TAB;
-        return centred(geometry, size.width + (attention ? TAB_DOT : 0), size.height);
+        // The amber dot is a badge on the mark, so the tab never shifts.
+        return centred(geometry, size.width, size.height);
       }
   }
 }

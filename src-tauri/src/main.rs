@@ -2,11 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod apple_items;
-#[cfg(target_os = "macos")]
-mod capture_panel;
-#[cfg(not(target_os = "macos"))]
-#[path = "capture_panel_stub.rs"]
-mod capture_panel;
 mod commands;
 #[cfg(target_os = "macos")]
 mod landed;
@@ -15,6 +10,11 @@ mod landed;
 mod landed;
 #[cfg(target_os = "macos")]
 mod mic_permission;
+#[cfg(target_os = "macos")]
+mod panels;
+#[cfg(not(target_os = "macos"))]
+#[path = "panels_stub.rs"]
+mod panels;
 #[cfg(not(target_os = "macos"))]
 #[path = "mic_permission_stub.rs"]
 mod mic_permission;
@@ -126,12 +126,11 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
       }
     });
 
-  // Dedicated monochrome menu-bar glyph rendered as a template image, so macOS
-  // tints it correctly for light/dark menu bars — instead of shrinking the
-  // full-color app icon, which looked muddy at menu-bar size.
+  // Chute's sphere mark, in colour: as a template image macOS would flatten it
+  // to a plain disc. 64px source so it stays crisp at menu-bar size on Retina.
   tray_builder = tray_builder
-    .icon(tauri::include_image!("icons/tray-32.png"))
-    .icon_as_template(true);
+    .icon(tauri::include_image!("icons/tray-64.png"))
+    .icon_as_template(false);
 
   tray_builder.build(app)?;
   Ok(())
@@ -299,7 +298,8 @@ fn main() {
       apple_items::open_automation_settings,
       apple_items::append_to_reminder,
       apple_items::append_to_apple_note,
-      apple_items::append_to_calendar_event
+      apple_items::append_to_calendar_event,
+      apple_items::find_apple_item
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
