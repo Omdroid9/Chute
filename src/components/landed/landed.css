@@ -12,6 +12,8 @@ html[data-window="landed"] body {
   --landed-muted: rgba(255, 255, 255, 0.55);
   --landed-green: #5dcaa5;
   --landed-amber: #ef9f27;
+  /* Past due: apart from amber, which means a capture needs you. */
+  --landed-red: #ff8a7a;
 
   position: fixed;
   inset: 0;
@@ -326,6 +328,33 @@ html[data-window="landed"] body {
   list-style: none;
 }
 
+/* Today's groups: what's due today, then what was captured. */
+.landed-group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 8px 3px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.landed-row + .landed-group {
+  margin-top: 5px;
+  padding-top: 8px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.1);
+}
+
+.landed-group-past {
+  color: var(--landed-red);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .landed-rows[data-more] {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
@@ -508,9 +537,13 @@ html[data-window="landed"] body {
   white-space: nowrap;
 }
 
-/* On Tomorrow the time is when it's due, the thing you came to see. */
+/* When it's due is the thing you came to see. */
 .landed-row-time.is-due {
   color: rgba(255, 255, 255, 0.85);
+}
+
+.landed-row-time.is-due.is-past {
+  color: var(--landed-red);
 }
 
 .landed-row-where {

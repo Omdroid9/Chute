@@ -34,28 +34,30 @@ export function recurrenceLabelFromRule(rule: string | null | undefined): string
   return `Every ${parsed.interval} ${parsed.interval === 1 ? parsed.unit : `${parsed.unit}s`}`;
 }
 
-export function addRecurrenceInterval(base: Date, rule: string): Date | null {
+/** `base` moved by the rule's interval `times` times (negative to go back). */
+export function addRecurrenceInterval(base: Date, rule: string, times = 1): Date | null {
   const parsed = parseStoredRecurrenceRule(rule);
   if (!parsed) {
     return null;
   }
 
+  const step = parsed.interval * times;
   const next = new Date(base);
   switch (parsed.unit) {
     case "second":
-      next.setSeconds(next.getSeconds() + parsed.interval);
+      next.setSeconds(next.getSeconds() + step);
       break;
     case "minute":
-      next.setMinutes(next.getMinutes() + parsed.interval);
+      next.setMinutes(next.getMinutes() + step);
       break;
     case "hour":
-      next.setHours(next.getHours() + parsed.interval);
+      next.setHours(next.getHours() + step);
       break;
     case "day":
-      next.setDate(next.getDate() + parsed.interval);
+      next.setDate(next.getDate() + step);
       break;
     case "week":
-      next.setDate(next.getDate() + parsed.interval * 7);
+      next.setDate(next.getDate() + step * 7);
       break;
   }
 

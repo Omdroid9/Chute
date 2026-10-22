@@ -34,12 +34,18 @@ import {
   LANDED_DAYS,
   dueOn,
   failedIds,
+  groupsOf,
+  headCount,
+  rowsOf,
   startOfLocalDay,
+  type DueCapture,
+  type DueRow,
   type LandedDay,
   type LandedViews,
 } from "./landedDays";
 import { parseStoredTimestamp } from "../../lib/timestamps";
 import { formatClockTime } from "../../lib/reminderTime";
+import { toLocalIso } from "../../lib/recurrence";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -246,8 +252,6 @@ export default function LandedWindow() {
   // Which day the open panel shows; back to Today whenever it closes.
   const [day, setDay] = useState<LandedDay>("today");
   const [views, setViews] = useState<LandedViews>(EMPTY_VIEWS);
-  /** Tomorrow's due time per capture, e.g. "9:00 AM". */
-  const [dueTimes, setDueTimes] = useState<ReadonlyMap<string, string>>(new Map());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
@@ -287,7 +291,7 @@ export default function LandedWindow() {
 
   // Event handlers are subscribed once; they read the latest state from refs.
   useLayoutEffect(() => {
-    rowsRef.current = [...views.today, ...views.yesterday, ...views.tomorrow];
+    rowsRef.current = [views.today, views.yesterday, views.tomorrow].flatMap(rowsOf);
     notionPageIdRef.current = notionPageId;
     settingsOpenedRef.current = settingsOpened;
     tipSeenRef.current = tipSeen;
@@ -351,14 +355,18 @@ export default function LandedWindow() {
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
     try {
-      const [today, yesterday, candidates, config] = await Promise.all([
+      const now = new Date();
+      const [today, yesterday, todayCandidates, tomorrowCandidates, config] = await Promise.all([
         listCapturesCreatedOn(0),
         listCapturesCreatedOn(-1),
+        listDueCandidatesOn(0),
         listDueCandidatesOn(1),
         loadSyncConfig(),
       ]);
-      const due = dueOn(candidates, startOfLocalDay(1));
-      const ids = [...new Set([...today, ...yesterday, ...due.map((item) => item.capture)].map((c) => c.id))];
+      const dueToday = dueOn(todayCandidates, startOfLocalDay(0, now), now);
+      const dueTomorrow = dueOn(tomorrowCandidates, startOfLocalDay(1, now), now);
+      const captures = [...today, ...yesterday, ...[...dueToday, ...dueTomorrow].map((item) => item.capture)];
+      const ids = [...new Set(captures.map((c) => c.id))];
       const [links, appends] = await Promise.all([
         getCaptureLinksFor(ids),
         // The main window creates this table on launch; until then, no additions.
@@ -367,12 +375,12 @@ export default function LandedWindow() {
       if (seq !== refreshSeq.current) return;
       const toRow = (capture: Capture) =>
         toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id));
+      const toDueRow = ({ capture, dueAt, past }: DueCapture): DueRow => ({ row: toRow(capture), dueAt, past });
       setViews({
-        yesterday: yesterday.map(toRow),
-        today: today.map(toRow),
-        tomorrow: due.map((item) => toRow(item.capture)),
+        yesterday: { due: [], captured: yesterday.map(toRow) },
+        today: { due: dueToday.map(toDueRow), captured: today.map(toRow) },
+        tomorrow: { due: dueTomorrow.map(toDueRow), captured: [] },
       });
-      setDueTimes(new Map(due.map((item) => [item.capture.id, formatClockTime(item.dueAt)])));
       setNotionPageId(config.notionPageId);
     } catch (error) {
       console.error("Landed: could not load captures", error);
@@ -650,10 +658,13 @@ export default function LandedWindow() {
   }, [hoverRow, updateListEdges]);
 
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
-  const rows = views[day];
-  // The peek counts today, but any failure the panel can show needs you.
+  const view = views[day];
+  const groups = groupsOf(view);
+  const pastCount = groups.due.filter((item) => item.past).length;
+  // The peek counts what was captured today (not what's due from earlier
+  // days), but any failure the panel can show needs you.
   const failed = failedIds(views);
-  const counts = { ...countLanded(views.today), failed: failed.size };
+  const counts = { ...countLanded(views.today.captured), failed: failed.size };
   const attention = failed.size > 0;
   const isOpen = stage === "open";
   const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
@@ -663,7 +674,7 @@ export default function LandedWindow() {
     if (!panel || !geometry) return;
     setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
     updateListEdges();
-  }, [rows, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
+  }, [view, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
 
   // Each day, and each opening, starts at the top of the list.
   useLayoutEffect(() => {
@@ -707,6 +718,71 @@ export default function LandedWindow() {
     ? { top: geometry.notch.height, height: CONF_DROP, width: geometry.notch.width + EAR * 2 }
     : { top: 0, height: CONF_PILL.height, width: CONF_PILL.width };
   const tip = tipVisible ? tipRect(geometry, tipHeight) : null;
+
+  /** One capture: `time` is its time column, `when` its reminder time once opened up. */
+  const rowItem = (row: LandedRow, time: JSX.Element, when: string | null) => (
+    <li
+      key={row.id}
+      data-row={row.id}
+      className={[
+        "landed-row",
+        `is-${row.status}`,
+        hoverId === row.id ? "is-hover" : "",
+        expandedId === row.id ? "is-expanded" : "",
+      ].join(" ")}
+    >
+      <KindIcon kind={row.kind} status={row.status} />
+      <span className="landed-row-main">
+        {expandedId === row.id ? (
+          <>
+            <span className="landed-row-full">{row.fullText}</span>
+            <span className="landed-row-meta">
+              <span>
+                {[KIND_LABELS[row.kind], when, row.status === "kept" ? null : row.where].filter(Boolean).join(" · ")}
+              </span>
+              <span className="landed-row-actions">
+                <CopyAction copied={copiedId === row.id} />
+                {row.status !== "failed" && (
+                  <span className="landed-row-add" data-action="add">
+                    Add
+                  </span>
+                )}
+              </span>
+            </span>
+          </>
+        ) : (
+          <span className="landed-row-text">{row.text}</span>
+        )}
+        {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+      </span>
+      {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
+        <span className="landed-row-fix" data-action="fix">
+          {fixLabel(row, settingsOpened.has(row.id))}
+        </span>
+      ) : (
+        <span className="landed-row-end">
+          {(hoverId === row.id || copiedId === row.id) && <CopyAction copied={copiedId === row.id} />}
+          {hoverId === row.id && (
+            <span className="landed-row-add" data-action="add">
+              Add
+            </span>
+          )}
+          <span className="landed-row-where">{row.where}</span>
+        </span>
+      )}
+      {time}
+    </li>
+  );
+
+  /** Something due: its time column is when it's due that day, marked once that's gone by. */
+  const dueRow = ({ row, dueAt, past }: DueRow) =>
+    rowItem(
+      row,
+      <time className={`landed-row-time is-due${past ? " is-past" : ""}`} dateTime={toLocalIso(dueAt)}>
+        {formatClockTime(dueAt)}
+      </time>,
+      formatWhen(toLocalIso(dueAt)),
+    );
 
   return (
     <div
@@ -770,17 +846,15 @@ export default function LandedWindow() {
                     className={`landed-day${option === day ? " is-active" : ""}${hoverDay === option ? " is-hover" : ""}`}
                   >
                     {label}
-                    {option !== day && views[option].some((row) => row.status === "failed") && (
+                    {option !== day && rowsOf(views[option]).some((row) => row.status === "failed") && (
                       <span className="landed-dot is-failed" />
                     )}
                   </span>
                 ))}
               </span>
-              <span className="landed-head-count">
-                {day === "tomorrow" ? `${rows.length} due` : rows.length}
-              </span>
+              <span className="landed-head-count">{headCount(day, view)}</span>
             </div>
-            {rows.length === 0 ? (
+            {groups.due.length === 0 && groups.captured.length === 0 ? (
               <p className="landed-empty">{EMPTY_TEXT[day]}</p>
             ) : (
               <ul
@@ -789,70 +863,26 @@ export default function LandedWindow() {
                 onScroll={onListScroll}
                 data-more={moreBelow ? "" : undefined}
               >
-                {rows.map((row) => (
-                  <li
-                    key={row.id}
-                    data-row={row.id}
-                    className={[
-                      "landed-row",
-                      `is-${row.status}`,
-                      hoverId === row.id ? "is-hover" : "",
-                      expandedId === row.id ? "is-expanded" : "",
-                    ].join(" ")}
-                  >
-                    <KindIcon kind={row.kind} status={row.status} />
-                    <span className="landed-row-main">
-                      {expandedId === row.id ? (
-                        <>
-                          <span className="landed-row-full">{row.fullText}</span>
-                          <span className="landed-row-meta">
-                            <span>
-                              {[KIND_LABELS[row.kind], formatWhen(row.reminderTime), row.status === "kept" ? null : row.where]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                            <span className="landed-row-actions">
-                              <CopyAction copied={copiedId === row.id} />
-                              {row.status !== "failed" && (
-                                <span className="landed-row-add" data-action="add">
-                                  Add
-                                </span>
-                              )}
-                            </span>
-                          </span>
-                        </>
-                      ) : (
-                        <span className="landed-row-text">{row.text}</span>
-                      )}
-                      {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
-                    </span>
-                    {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
-                      <span className="landed-row-fix" data-action="fix">
-                        {fixLabel(row, settingsOpened.has(row.id))}
-                      </span>
-                    ) : (
-                      <span className="landed-row-end">
-                        {(hoverId === row.id || copiedId === row.id) && <CopyAction copied={copiedId === row.id} />}
-                        {hoverId === row.id && (
-                          <span className="landed-row-add" data-action="add">
-                            Add
-                          </span>
-                        )}
-                        <span className="landed-row-where">{row.where}</span>
-                      </span>
-                    )}
-                    {/* When it was captured; on Tomorrow, when it's due. */}
-                    {day === "tomorrow" ? (
-                      <time className="landed-row-time is-due" dateTime={row.reminderTime ?? undefined}>
-                        {dueTimes.get(row.id)}
-                      </time>
-                    ) : (
-                      <time className="landed-row-time" dateTime={row.createdAt}>
-                        {formatClockTime(parseStoredTimestamp(row.createdAt))}
-                      </time>
-                    )}
+                {/* Today opens on what's due today, whenever it was captured. */}
+                {day === "today" && groups.due.length > 0 && (
+                  <li className="landed-group">
+                    Due today
+                    {pastCount > 0 && <span className="landed-group-past">{pastCount} past</span>}
                   </li>
-                ))}
+                )}
+                {groups.due.map(dueRow)}
+                {day === "today" && groups.due.length > 0 && groups.captured.length > 0 && (
+                  <li className="landed-group">Captured</li>
+                )}
+                {groups.captured.map((row) =>
+                  rowItem(
+                    row,
+                    <time className="landed-row-time" dateTime={row.createdAt}>
+                      {formatClockTime(parseStoredTimestamp(row.createdAt))}
+                    </time>,
+                    formatWhen(row.reminderTime),
+                  ),
+                )}
               </ul>
             )}
           </div>
