@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { LandedRow } from "./landedRows";
-import { dueOn, failedIds, firstDueOn, startOfLocalDay } from "./landedDays";
+import { dueOn, failedIds, firstDueOn, patchRow, startOfLocalDay } from "./landedDays";
 
 // Local parts throughout, so the tests hold in any time zone.
 const now = new Date(2026, 9, 21, 14, 0);
@@ -29,6 +29,8 @@ function row(id: string, status: LandedRow["status"]): LandedRow {
     targets: [],
     problem: null,
     reminderTime: null,
+    recurring: false,
+    done: false,
     createdAt: "2026-10-21 12:00:00",
   };
 }
@@ -103,5 +105,20 @@ describe("failedIds", () => {
       tomorrow: [row("c", "failed"), row("d", "pending")],
     });
     expect([...ids].sort()).toEqual(["a", "c"]);
+  });
+});
+
+describe("patchRow", () => {
+  it("changes the capture on every day it shows, and nothing else", () => {
+    const views = {
+      yesterday: [row("a", "landed")],
+      today: [row("b", "landed"), row("c", "landed")],
+      tomorrow: [row("b", "landed")],
+    };
+    const next = patchRow(views, "b", { done: true });
+    expect(next.today.map((item) => item.done)).toEqual([true, false]);
+    expect(next.tomorrow[0].done).toBe(true);
+    expect(next.yesterday[0]).toBe(views.yesterday[0]);
+    expect(views.today[0].done).toBe(false);
   });
 });

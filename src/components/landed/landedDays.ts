@@ -77,3 +77,9 @@ export function failedIds(views: LandedViews): Set<string> {
   }
   return ids;
 }
+
+/** The views with one capture changed wherever it shows (it can be on Today and Tomorrow). */
+export function patchRow(views: LandedViews, id: string, patch: Partial<LandedRow>): LandedViews {
+  const patchDay = (rows: LandedRow[]) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
+  return { yesterday: patchDay(views.yesterday), today: patchDay(views.today), tomorrow: patchDay(views.tomorrow) };
+}

@@ -479,7 +479,8 @@ html[data-window="landed"] body {
 }
 
 .landed-row-add,
-.landed-row-copy {
+.landed-row-copy,
+.landed-row-pill {
   padding: 2px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -488,9 +489,53 @@ html[data-window="landed"] body {
   font-weight: 600;
 }
 
-.landed-row-copy.is-copied {
+.landed-row-copy.is-copied,
+.landed-row-pill.is-confirmed {
   background: rgba(93, 202, 165, 0.18);
   color: var(--landed-green);
+}
+
+/* A reminder's own line in an open row: Done and Snooze, or Snooze's choices. */
+.landed-row-todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.landed-row-pill.is-done {
+  background: rgba(93, 202, 165, 0.2);
+  color: var(--landed-green);
+}
+
+.landed-row-pill.is-active {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.landed-row-pill.is-busy {
+  opacity: 0.5;
+}
+
+.landed-row-done-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--landed-green);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* Finished from here: still the day's, just out of the way. */
+.landed-row.is-done .landed-row-text,
+.landed-row.is-done .landed-row-full {
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+}
+
+.landed-row.is-done .landed-kind {
+  opacity: 0.45;
 }
 
 .landed-row-actions {

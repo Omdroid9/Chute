@@ -59,6 +59,10 @@ export interface LandedRow {
   targets: LandedTarget[];
   problem: SyncProblem | null;
   reminderTime: string | null;
+  /** A repeating reminder: each time comes due, Chute makes a new reminder. */
+  recurring: boolean;
+  /** Its reminder was marked done from Landed. */
+  done: boolean;
   /** When it was captured, as stored (UTC). */
   createdAt: string;
 }
@@ -74,6 +78,7 @@ export function toLandedRow(
   config: SyncConfig,
   links: CaptureLink[] = [],
   appends?: AppendState,
+  done = false,
 ): LandedRow {
   const text = capture.content.replace(/\s+/g, " ").trim();
   const fullText = capture.content.trim();
@@ -95,6 +100,8 @@ export function toLandedRow(
     fullText,
     kind: primary ? KIND_BY_DESTINATION[primary.destination] : ("chute" as const),
     reminderTime: capture.reminder_time,
+    recurring: Boolean(capture.recurrence_rule),
+    done,
     createdAt: capture.created_at,
   };
   if (targets.length === 0) {
@@ -128,6 +135,16 @@ export function toLandedRow(
 /** What a click on the row opens: the first place it landed, else the first target. */
 export function primaryTarget(row: LandedRow): LandedTarget | null {
   return row.targets.find((target) => target.synced) ?? row.targets[0] ?? null;
+}
+
+/**
+ * The reminder Done and Snooze act on: one that's in Reminders, for a one-off
+ * capture (a repeating one gets a new reminder each time, so there's no single
+ * one to finish or move).
+ */
+export function actionableReminder(row: LandedRow): LandedTarget | null {
+  if (row.kind !== "reminder" || row.recurring || row.status === "failed") return null;
+  return row.targets.find((target) => target.destination === "reminders" && target.synced) ?? null;
 }
 
 export function countLanded(rows: LandedRow[]): LandedCounts {

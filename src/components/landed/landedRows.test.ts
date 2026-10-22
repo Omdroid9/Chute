@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { SyncConfig } from "../../lib/sync/syncEngine";
 import { describeDestinations } from "../../lib/sync/destinations";
-import { countLanded, formatWhen, primaryTarget, toLandedRow } from "./landedRows";
+import { actionableReminder, countLanded, formatWhen, primaryTarget, toLandedRow } from "./landedRows";
 
 const CONFIG: SyncConfig = {
   slackWebhookUrl: "https://hooks.slack.com/services/x",
@@ -185,5 +185,34 @@ describe("formatWhen", () => {
 
   it("has nothing to say without a time", () => {
     expect(formatWhen(null, now)).toBeNull();
+  });
+});
+
+describe("actionableReminder", () => {
+  const link = { destination: "reminders" as const, externalId: "x-apple-reminder://r1" };
+  const inReminders = { target_reminders: 1, synced_reminders: 1, reminder_time: "2026-10-22T16:00:00" };
+
+  it("is the reminder once it's in Reminders, done or not", () => {
+    expect(actionableReminder(toLandedRow(makeCapture(inReminders), CONFIG, [link]))?.link).toEqual(link);
+    const done = toLandedRow(makeCapture(inReminders), CONFIG, [link], undefined, true);
+    expect(done.done).toBe(true);
+    expect(actionableReminder(done)?.destination).toBe("reminders");
+  });
+
+  it("works for reminders sent before Chute kept ids (found by title later)", () => {
+    expect(actionableReminder(toLandedRow(makeCapture(inReminders), CONFIG))?.link).toBeNull();
+  });
+
+  it("is null until it's in Reminders, or when it failed", () => {
+    expect(actionableReminder(toLandedRow(makeCapture({ target_reminders: 1 }), CONFIG))).toBeNull();
+    const failed = makeCapture({ target_reminders: 1, last_sync_error: "Reminders: boom" });
+    expect(actionableReminder(toLandedRow(failed, CONFIG))).toBeNull();
+  });
+
+  it("is null for repeating reminders and for anything that isn't a reminder", () => {
+    const repeating = makeCapture({ ...inReminders, recurrence_rule: "FREQ=DAILY" });
+    expect(actionableReminder(toLandedRow(repeating, CONFIG, [link]))).toBeNull();
+    const note = makeCapture({ target_apple_reminders: 1, synced_apple_reminders: 1 });
+    expect(actionableReminder(toLandedRow(note, CONFIG))).toBeNull();
   });
 });

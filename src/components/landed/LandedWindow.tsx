@@ -7,6 +7,7 @@ import {
   dismissCaptureAppends,
   getAppendStatesFor,
   getCaptureLinksFor,
+  getCompletedIdsFor,
   getSetting,
   listCapturesCreatedOn,
   listDueCandidatesOn,
@@ -16,8 +17,10 @@ import {
 } from "../../lib/db";
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
 import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
+import { describeSyncError } from "../../lib/sync/syncErrors";
 import {
   KIND_LABELS,
+  actionableReminder,
   countLanded,
   formatWhen,
   primaryTarget,
@@ -28,18 +31,21 @@ import {
   type LandedStatus,
 } from "./landedRows";
 import { openTarget } from "./landedActions";
+import { setReminderDone, snoozeReminder } from "./landedReminders";
 import {
   EMPTY_TEXT,
   EMPTY_VIEWS,
   LANDED_DAYS,
   dueOn,
   failedIds,
+  patchRow,
   startOfLocalDay,
   type LandedDay,
   type LandedViews,
 } from "./landedDays";
 import { parseStoredTimestamp } from "../../lib/timestamps";
 import { formatClockTime } from "../../lib/reminderTime";
+import { SNOOZE_LABELS, snoozeChoices, snoozeUntil, type SnoozeChoice } from "../../lib/snooze";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -213,6 +219,66 @@ function CopyAction({ copied }: { copied: boolean }) {
   );
 }
 
+const SNOOZE_CHOICES = Object.keys(SNOOZE_LABELS) as SnoozeChoice[];
+
+/**
+ * Finish or move a reminder without opening Reminders. The line itself is
+ * inert: a near miss between buttons shouldn't open Reminders and close the panel.
+ */
+function ReminderActions({
+  done,
+  picking,
+  snoozing,
+  snoozed,
+}: {
+  done: boolean;
+  /** Snooze was pressed: its choices stand in for Done. */
+  picking: boolean;
+  /** The choice on its way to Reminders. */
+  snoozing: SnoozeChoice | undefined;
+  snoozed: boolean;
+}) {
+  if (done) {
+    return (
+      <span className="landed-row-todo" data-action="none">
+        <span className="landed-row-done-mark">
+          <CheckIcon />
+          Done
+        </span>
+        <span className="landed-row-pill" data-action="done">
+          Undo
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="landed-row-todo" data-action="none">
+      {!picking && (
+        <span className="landed-row-pill is-done" data-action="done">
+          Done
+        </span>
+      )}
+      <span
+        className={`landed-row-pill${picking ? " is-active" : ""}${snoozed ? " is-confirmed" : ""}`}
+        data-action="snooze"
+      >
+        {snoozed ? "Snoozed" : "Snooze"}
+      </span>
+      {picking &&
+        snoozeChoices().map((choice) => (
+          <span
+            key={choice}
+            className={`landed-row-pill${snoozing === choice ? " is-busy" : ""}`}
+            data-action="snooze-to"
+            data-snooze={choice}
+          >
+            {SNOOZE_LABELS[choice]}
+          </span>
+        ))}
+    </span>
+  );
+}
+
 function fixLabel(row: LandedRow, settingsOpened: boolean): string {
   if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
   if (row.problem?.kind === "reconnect") return "Fix";
@@ -227,6 +293,8 @@ export default function LandedWindow() {
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The row whose Snooze is showing its choices. */
+  const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
   const hoverRef = useRef<string | null>(null);
   const expandTimer = useRef<number | undefined>(undefined);
 
@@ -238,6 +306,7 @@ export default function LandedWindow() {
     window.clearTimeout(expandTimer.current);
     expandTimer.current = undefined;
     setExpandedId(null);
+    setSnoozeOpenId(null);
     if (id) {
       expandTimer.current = window.setTimeout(() => setExpandedId(id), EXPAND_DELAY_MS);
     }
@@ -249,6 +318,11 @@ export default function LandedWindow() {
   /** Tomorrow's due time per capture, e.g. "9:00 AM". */
   const [dueTimes, setDueTimes] = useState<ReadonlyMap<string, string>>(new Map());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [snoozedId, setSnoozedId] = useState<string | null>(null);
+  /** Snoozes on their way to Reminders, by capture. */
+  const [snoozing, setSnoozing] = useState<ReadonlyMap<string, SnoozeChoice>>(new Map());
+  /** Done or Snooze that Reminders refused, by capture; cleared when the panel closes. */
+  const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
   const [tipHeight, setTipHeight] = useState(96);
@@ -273,6 +347,11 @@ export default function LandedWindow() {
   const peekTimer = useRef<number | undefined>(undefined);
   const restTimer = useRef<number | undefined>(undefined);
   const copiedTimer = useRef<number | undefined>(undefined);
+  const snoozedTimer = useRef<number | undefined>(undefined);
+  /** Captures with a Done or Snooze in flight: one at a time each. */
+  const busy = useRef(new Set<string>());
+  /** Done/Undo not yet confirmed by Reminders; a refresh meanwhile keeps showing it. */
+  const doneInFlight = useRef(new Map<string, boolean>());
   const closeTimer = useRef<number | undefined>(undefined);
   const confTimer = useRef<number | undefined>(undefined);
   const refreshSeq = useRef(0);
@@ -315,7 +394,10 @@ export default function LandedWindow() {
         hoverRow(null);
         setHoverDay(null);
       }
-      if (next === "idle") setDay("today");
+      if (next === "idle") {
+        setDay("today");
+        setRowErrors(new Map());
+      }
       if (next !== "conf") {
         clearTimer(confTimer);
         setConfirmation(null);
@@ -359,14 +441,22 @@ export default function LandedWindow() {
       ]);
       const due = dueOn(candidates, startOfLocalDay(1));
       const ids = [...new Set([...today, ...yesterday, ...due.map((item) => item.capture)].map((c) => c.id))];
-      const [links, appends] = await Promise.all([
+      const [links, appends, completed] = await Promise.all([
         getCaptureLinksFor(ids),
         // The main window creates this table on launch; until then, no additions.
         getAppendStatesFor(ids).catch(() => new Map<string, AppendState>()),
+        // Likewise the completed_at column.
+        getCompletedIdsFor(ids).catch(() => new Set<string>()),
       ]);
       if (seq !== refreshSeq.current) return;
       const toRow = (capture: Capture) =>
-        toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id));
+        toLandedRow(
+          capture,
+          config,
+          links.get(capture.id) ?? [],
+          appends.get(capture.id),
+          doneInFlight.current.get(capture.id) ?? completed.has(capture.id),
+        );
       setViews({
         yesterday: yesterday.map(toRow),
         today: today.map(toRow),
@@ -412,6 +502,73 @@ export default function LandedWindow() {
     [close, refresh],
   );
 
+  const setRowError = useCallback((id: string, error: unknown) => {
+    setRowErrors((current) => {
+      const next = new Map(current);
+      if (error === null) {
+        next.delete(id);
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        next.set(id, describeSyncError(`Reminders: ${message}`)?.message ?? message);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Done (or Undo): reads as done at once, and goes back if Reminders refuses. */
+  const markDone = useCallback(
+    async (row: LandedRow, done: boolean) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      doneInFlight.current.set(row.id, done);
+      setRowError(row.id, null);
+      setViews((current) => patchRow(current, row.id, { done }));
+      try {
+        await setReminderDone(row, done);
+      } catch (error) {
+        console.error("Landed: could not mark the reminder", error);
+        setViews((current) => patchRow(current, row.id, { done: !done }));
+        setRowError(row.id, error);
+      } finally {
+        doneInFlight.current.delete(row.id);
+        busy.current.delete(row.id);
+      }
+    },
+    [setRowError],
+  );
+
+  const snooze = useCallback(
+    async (row: LandedRow, choice: SnoozeChoice) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      setRowError(row.id, null);
+      setSnoozing((current) => new Map(current).set(row.id, choice));
+      try {
+        const until = snoozeUntil(choice);
+        await snoozeReminder(row, until);
+        setViews((current) => patchRow(current, row.id, { reminderTime: until }));
+        setSnoozeOpenId((current) => (current === row.id ? null : current));
+        clearTimer(snoozedTimer);
+        setSnoozedId(row.id);
+        snoozedTimer.current = window.setTimeout(() => {
+          snoozedTimer.current = undefined;
+          setSnoozedId(null);
+        }, COPIED_MS);
+      } catch (error) {
+        console.error("Landed: could not snooze the reminder", error);
+        setRowError(row.id, error);
+      } finally {
+        busy.current.delete(row.id);
+        setSnoozing((current) => {
+          const next = new Map(current);
+          next.delete(row.id);
+          return next;
+        });
+      }
+    },
+    [setRowError],
+  );
+
   /** One press on the canvas at (x, y), from either the DOM or the poller. */
   const press = useCallback(
     (x: number, y: number) => {
@@ -426,6 +583,7 @@ export default function LandedWindow() {
       const rowId = element.closest<HTMLElement>("[data-row]")?.dataset.row;
       const row = rowsRef.current.find((candidate) => candidate.id === rowId);
 
+      if (action === "none") return;
       if (action === "tip-ok") {
         markTipSeen();
         return;
@@ -453,6 +611,21 @@ export default function LandedWindow() {
         void fix(row);
         return;
       }
+      // Done and Snooze keep the panel open: the point is not to leave the app you're in.
+      if (action === "done" && row) {
+        void markDone(row, !row.done);
+        return;
+      }
+      if (action === "snooze" && row) {
+        setSnoozeOpenId((current) => (current === row.id ? null : row.id));
+        return;
+      }
+      if (action === "snooze-to" && row) {
+        const choice = element.closest<HTMLElement>("[data-snooze]")?.dataset.snooze;
+        const known = SNOOZE_CHOICES.find((candidate) => candidate === choice);
+        if (known) void snooze(row, known);
+        return;
+      }
       if (action === "add" && row) {
         // Open the capture bar in "Adding to" mode for this capture.
         void (async () => {
@@ -478,7 +651,7 @@ export default function LandedWindow() {
         openPanel("pointer");
       }
     },
-    [close, fix, markTipSeen, openPanel],
+    [close, fix, markDone, markTipSeen, openPanel, snooze],
   );
 
   const showConfirmation = useCallback(
@@ -602,6 +775,7 @@ export default function LandedWindow() {
       clearTimer(confTimer);
       clearTimer(restTimer);
       clearTimer(copiedTimer);
+      clearTimer(snoozedTimer);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
   }, [close, go, hoverRow, openPanel, press, refresh, showConfirmation]);
@@ -663,7 +837,7 @@ export default function LandedWindow() {
     if (!panel || !geometry) return;
     setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
     updateListEdges();
-  }, [rows, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
+  }, [rows, geometry, panelTop, settingsOpened, expandedId, snoozeOpenId, rowErrors, updateListEdges]);
 
   // Each day, and each opening, starts at the top of the list.
   useLayoutEffect(() => {
@@ -777,7 +951,7 @@ export default function LandedWindow() {
                 ))}
               </span>
               <span className="landed-head-count">
-                {day === "tomorrow" ? `${rows.length} due` : rows.length}
+                {day === "tomorrow" ? `${rows.filter((row) => !row.done).length} due` : rows.length}
               </span>
             </div>
             {rows.length === 0 ? (
@@ -796,6 +970,7 @@ export default function LandedWindow() {
                     className={[
                       "landed-row",
                       `is-${row.status}`,
+                      row.done ? "is-done" : "",
                       hoverId === row.id ? "is-hover" : "",
                       expandedId === row.id ? "is-expanded" : "",
                     ].join(" ")}
@@ -820,11 +995,20 @@ export default function LandedWindow() {
                               )}
                             </span>
                           </span>
+                          {actionableReminder(row) && (
+                            <ReminderActions
+                              done={row.done}
+                              picking={snoozeOpenId === row.id}
+                              snoozing={snoozing.get(row.id)}
+                              snoozed={snoozedId === row.id}
+                            />
+                          )}
                         </>
                       ) : (
                         <span className="landed-row-text">{row.text}</span>
                       )}
                       {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+                      {rowErrors.has(row.id) && <span className="landed-row-note">{rowErrors.get(row.id)}</span>}
                     </span>
                     {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
                       <span className="landed-row-fix" data-action="fix">

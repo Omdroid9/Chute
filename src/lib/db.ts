@@ -379,6 +379,8 @@ async function runBootstrap(): Promise<void> {
   await ensureCaptureColumn(db, "recurrence_next_at", "DATETIME NULL");
   await ensureCaptureColumn(db, "routing_source", "TEXT NULL");
   await ensureCaptureColumn(db, "routing_reason", "TEXT NULL");
+  // When the reminder a capture became was marked done from Landed (UTC).
+  await ensureCaptureColumn(db, "completed_at", "DATETIME NULL");
 
   await db.execute(
     `
@@ -892,6 +894,33 @@ export async function getAppendStatesFor(captureIds: string[]): Promise<Map<stri
     states.set(row.capture_id, state);
   }
   return states;
+}
+
+/** Mark a capture's reminder done (or not done again) after Reminders agreed. */
+export async function setCaptureCompleted(id: string, completed: boolean): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    completed
+      ? `UPDATE captures SET completed_at = CURRENT_TIMESTAMP WHERE id = $1;`
+      : `UPDATE captures SET completed_at = NULL WHERE id = $1;`,
+    [id],
+  );
+}
+
+/** Which of these captures are marked done. */
+export async function getCompletedIdsFor(captureIds: string[]): Promise<Set<string>> {
+  if (captureIds.length === 0) return new Set();
+  const db = await getDatabase();
+  const placeholders = captureIds.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await db.select<Array<{ id: string }>>(
+    `
+      SELECT id
+      FROM captures
+      WHERE completed_at IS NOT NULL AND id IN (${placeholders});
+    `,
+    captureIds,
+  );
+  return new Set(rows.map((row) => row.id));
 }
 
 /** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,
