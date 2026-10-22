@@ -18,6 +18,11 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
+/** "4:00 PM" (or "16:00"), in the system locale unless one is given. */
+export function formatClockTime(date: Date, locale?: string): string {
+  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+}
+
 /**
  * A stored reminder time for people: "Today 4:00 PM", "Tomorrow 9:00 AM",
  * "Yesterday 6:00 PM", otherwise "Tue, Oct 20 4:00 PM" (plus the year when it
@@ -27,7 +32,7 @@ export function formatReminderTime(value: string, now = new Date(), locale?: str
   const date = parseReminderTime(value);
   if (Number.isNaN(date.getTime())) return value;
 
-  const time = date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  const time = formatClockTime(date, locale);
   const dayOffset = Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
   if (dayOffset === 0) return `Today ${time}`;
   if (dayOffset === 1) return `Tomorrow ${time}`;

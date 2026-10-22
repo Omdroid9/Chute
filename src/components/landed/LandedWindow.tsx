@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import type { Capture } from "../../types";
 import {
   type AppendState,
   getAppendStatesFor,
   getCaptureLinksFor,
   getSetting,
-  listCapturesToday,
+  listCapturesCreatedOn,
+  listDueCandidatesOn,
   retryCaptureAppends,
   setCaptureSyncError,
   setSetting,
 } from "../../lib/db";
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
 import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
+import { formatClockTime } from "../../lib/reminderTime";
 import {
   countLanded,
   primaryTarget,
@@ -22,6 +25,16 @@ import {
   type LandedStatus,
 } from "./landedRows";
 import { openTarget } from "./landedActions";
+import {
+  EMPTY_TEXT,
+  EMPTY_VIEWS,
+  LANDED_DAYS,
+  dueOn,
+  failedIds,
+  startOfLocalDay,
+  type LandedDay,
+  type LandedViews,
+} from "./landedDays";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -124,6 +137,11 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
   return <span className="landed-muted">Nothing yet</span>;
 }
 
+function dayAt(element: Element | null | undefined): LandedDay | null {
+  const value = element?.closest<HTMLElement>("[data-day]")?.dataset.day;
+  return LANDED_DAYS.find(({ day }) => day === value)?.day ?? null;
+}
+
 function fixLabel(row: LandedRow, settingsOpened: boolean): string {
   if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
   if (row.problem?.kind === "reconnect") return "Fix";
@@ -135,7 +153,12 @@ export default function LandedWindow() {
   const [stage, setStage] = useState<Stage>("idle");
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [rows, setRows] = useState<LandedRow[]>([]);
+  const [hoverDay, setHoverDay] = useState<LandedDay | null>(null);
+  // Which day the open panel shows; back to Today whenever it closes.
+  const [day, setDay] = useState<LandedDay>("today");
+  const [views, setViews] = useState<LandedViews>(EMPTY_VIEWS);
+  /** Tomorrow's due time per capture, e.g. "9:00 AM". */
+  const [dueTimes, setDueTimes] = useState<ReadonlyMap<string, string>>(new Map());
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
   const [tipHeight, setTipHeight] = useState(96);
@@ -169,11 +192,11 @@ export default function LandedWindow() {
 
   // Event handlers are subscribed once; they read the latest state from refs.
   useLayoutEffect(() => {
-    rowsRef.current = rows;
+    rowsRef.current = [...views.today, ...views.yesterday, ...views.tomorrow];
     notionPageIdRef.current = notionPageId;
     settingsOpenedRef.current = settingsOpened;
     tipSeenRef.current = tipSeen;
-  }, [rows, notionPageId, settingsOpened, tipSeen]);
+  }, [views, notionPageId, settingsOpened, tipSeen]);
 
   const clearTimer = (timer: { current: number | undefined }) => {
     window.clearTimeout(timer.current);
@@ -193,7 +216,11 @@ export default function LandedWindow() {
     (next: Stage) => {
       stageRef.current = next;
       setStage(next);
-      if (next !== "open") setHoverId(null);
+      if (next !== "open") {
+        setHoverId(null);
+        setHoverDay(null);
+      }
+      if (next === "idle") setDay("today");
       if (next !== "conf") {
         clearTimer(confTimer);
         setConfirmation(null);
@@ -227,22 +254,31 @@ export default function LandedWindow() {
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
     try {
-      const [captures, config] = await Promise.all([listCapturesToday(50), loadSyncConfig()]);
-      const ids = captures.map((capture) => capture.id);
+      const [today, yesterday, candidates, config] = await Promise.all([
+        listCapturesCreatedOn(0),
+        listCapturesCreatedOn(-1),
+        listDueCandidatesOn(1),
+        loadSyncConfig(),
+      ]);
+      const due = dueOn(candidates, startOfLocalDay(1));
+      const ids = [...new Set([...today, ...yesterday, ...due.map((item) => item.capture)].map((c) => c.id))];
       const [links, appends] = await Promise.all([
         getCaptureLinksFor(ids),
         // The main window creates this table on launch; until then, no additions.
         getAppendStatesFor(ids).catch(() => new Map<string, AppendState>()),
       ]);
       if (seq !== refreshSeq.current) return;
-      setRows(
-        captures.map((capture) =>
-          toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id)),
-        ),
-      );
+      const toRow = (capture: Capture) =>
+        toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id));
+      setViews({
+        yesterday: yesterday.map(toRow),
+        today: today.map(toRow),
+        tomorrow: due.map((item) => toRow(item.capture)),
+      });
+      setDueTimes(new Map(due.map((item) => [item.capture.id, formatClockTime(item.dueAt)])));
       setNotionPageId(config.notionPageId);
     } catch (error) {
-      console.error("Landed: could not load today's captures", error);
+      console.error("Landed: could not load captures", error);
     }
   }, []);
 
@@ -290,6 +326,11 @@ export default function LandedWindow() {
 
       if (action === "tip-ok") {
         markTipSeen();
+        return;
+      }
+      if (action === "day") {
+        const next = dayAt(element);
+        if (next) setDay(next);
         return;
       }
       if (action === "fix" && row) {
@@ -359,6 +400,7 @@ export default function LandedWindow() {
       if (!pointer.inside) {
         clearTimer(peekTimer);
         setHoverId(null);
+        setHoverDay(null);
         suppressUntilLeave.current = false;
         if ((current === "peek" || current === "open") && closeTimer.current === undefined) {
           closeTimer.current = window.setTimeout(() => {
@@ -379,8 +421,9 @@ export default function LandedWindow() {
       }
 
       if (current === "open") {
-        const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
-        setHoverId(row?.dataset.row ?? null);
+        const element = document.elementFromPoint(pointer.x, pointer.y);
+        setHoverId(element?.closest<HTMLElement>("[data-row]")?.dataset.row ?? null);
+        setHoverDay(dayAt(element));
         return;
       }
 
@@ -467,8 +510,11 @@ export default function LandedWindow() {
   }, [stage, refresh]);
 
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
-  const counts = countLanded(rows);
-  const attention = counts.failed > 0;
+  const rows = views[day];
+  // The peek counts today, but any failure the panel can show needs you.
+  const failed = failedIds(views);
+  const counts = { ...countLanded(views.today), failed: failed.size };
+  const attention = failed.size > 0;
   const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
 
   useLayoutEffect(() => {
@@ -552,11 +598,27 @@ export default function LandedWindow() {
 
           <div className="landed-panel" style={{ top: panelTop, width: PANEL_WIDTH }} ref={panelRef}>
             <div className="landed-head">
-              <span>Landed today</span>
-              <span className="landed-head-count">{counts.total}</span>
+              <span className="landed-days">
+                {LANDED_DAYS.map(({ day: option, label }) => (
+                  <span
+                    key={option}
+                    data-action="day"
+                    data-day={option}
+                    className={`landed-day${option === day ? " is-active" : ""}${hoverDay === option ? " is-hover" : ""}`}
+                  >
+                    {label}
+                    {option !== day && views[option].some((row) => row.status === "failed") && (
+                      <span className="landed-dot is-failed" />
+                    )}
+                  </span>
+                ))}
+              </span>
+              <span className="landed-head-count">
+                {day === "tomorrow" ? `${rows.length} due` : rows.length}
+              </span>
             </div>
             {rows.length === 0 ? (
-              <p className="landed-empty">Nothing yet today. Captures show up here as they land.</p>
+              <p className="landed-empty">{EMPTY_TEXT[day]}</p>
             ) : (
               <ul className="landed-rows">
                 {rows.slice(0, MAX_ROWS).map((row) => (
@@ -581,7 +643,11 @@ export default function LandedWindow() {
                             Add
                           </span>
                         )}
-                        <span className="landed-row-where">{row.where}</span>
+                        {day === "tomorrow" ? (
+                          <span className="landed-row-time">{dueTimes.get(row.id)}</span>
+                        ) : (
+                          <span className="landed-row-where">{row.where}</span>
+                        )}
                       </span>
                     )}
                   </li>

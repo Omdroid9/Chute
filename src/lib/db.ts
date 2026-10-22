@@ -503,8 +503,13 @@ export async function listCaptures(limit = 100): Promise<Capture[]> {
   return rows;
 }
 
-/** Today's captures (local day), newest first. `created_at` is stored in UTC. */
-export async function listCapturesToday(limit = 50): Promise<Capture[]> {
+/** SQLite date modifier for a local day relative to today, e.g. "-1 days". */
+function dayModifier(dayOffset: number): string {
+  return `${dayOffset >= 0 ? "+" : ""}${Math.trunc(dayOffset)} days`;
+}
+
+/** Captures made on a local day (0 today, -1 yesterday), newest first. `created_at` is stored in UTC. */
+export async function listCapturesCreatedOn(dayOffset: number, limit = 50): Promise<Capture[]> {
   const db = await getDatabase();
   return db.select<Capture[]>(
     `
@@ -512,11 +517,38 @@ export async function listCapturesToday(limit = 50): Promise<Capture[]> {
         ${CAPTURE_SELECT_FIELDS}
       FROM captures
       LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
-      WHERE DATE(captures.created_at, 'localtime') = DATE('now', 'localtime')
+      WHERE DATE(captures.created_at, 'localtime') = DATE('now', 'localtime', $1)
       ORDER BY captures.created_at DESC
-      LIMIT $1;
+      LIMIT $2;
     `,
-    [limit],
+    [dayModifier(dayOffset), limit],
+  );
+}
+
+/** Today's captures (local day), newest first. */
+export function listCapturesToday(limit = 50): Promise<Capture[]> {
+  return listCapturesCreatedOn(0, limit);
+}
+
+/**
+ * Captures that may be due on a local day: a reminder_time on that day
+ * (stored as a local ISO string, so no zone conversion), plus every repeating
+ * reminder, whose occurrences the caller works out.
+ */
+export async function listDueCandidatesOn(dayOffset: number, limit = 100): Promise<Capture[]> {
+  const db = await getDatabase();
+  return db.select<Capture[]>(
+    `
+      SELECT
+        ${CAPTURE_SELECT_FIELDS}
+      FROM captures
+      LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
+      WHERE (reminder_time IS NOT NULL AND DATE(reminder_time) = DATE('now', 'localtime', $1))
+        OR (recurrence_rule IS NOT NULL AND recurrence_next_at IS NOT NULL)
+      ORDER BY reminder_time ASC
+      LIMIT $2;
+    `,
+    [dayModifier(dayOffset), limit],
   );
 }
 
