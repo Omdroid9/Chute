@@ -912,7 +912,7 @@ if (demoInput) {
 
   let toastTimer = null;
 
-  // "Send" a finished example: pop the toast with the routed destination and
+  // "Send" a finished example: drop the notch confirmation with the routed destination and
   // light up that destination in the row under the window.
   function finishExample(text) {
     const route = demoRoute(text);
@@ -923,7 +923,7 @@ if (demoInput) {
     toast.hidden = false;
     requestAnimationFrame(() => toast.classList.add("is-in"));
     if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("is-in"), 1700);
+    toastTimer = setTimeout(() => toast.classList.remove("is-in"), 2200);
   }
 
   const DEMO_EXAMPLES = [
@@ -1835,5 +1835,183 @@ if (mbs) {
       },
       { passive: true },
     );
+  }
+}
+
+// ---------- Landed: the notch panel on the MacBook screen ----------
+// A scripted day that mirrors the Library behind it: the notch rests, peeks
+// with counts, then opens into the day pill and its list. A due reminder opens
+// up to Done and Snooze, gets finished, and the pill steps through the days.
+// Hovering the notch holds it open, like resting on it in the app.
+const notch = document.querySelector("[data-mbs-notch]");
+if (notch) {
+  const shape = notch.querySelector("[data-mbs-notch-shape]");
+  const panel = notch.querySelector("[data-mbs-notch-panel]");
+  const list = notch.querySelector("[data-mbs-notch-list]");
+  const count = notch.querySelector("[data-mbs-notch-count]");
+  const caption = document.querySelector("[data-mbs-notch-caption]");
+
+  const KIND_PATHS = {
+    reminder:
+      '<circle cx="4.25" cy="5" r="1.6"/><circle cx="4.25" cy="11" r="1.6"/><path d="M7.75 5h5.75M7.75 11h5.75"/>',
+    event: '<rect x="2.5" y="3.5" width="11" height="10" rx="2"/><path d="M2.5 6.75h11M5.5 2v3M10.5 2v3"/>',
+    note: '<rect x="3" y="2.5" width="10" height="11" rx="1.8"/><path d="M5.5 6h5M5.5 8.5h5M5.5 11h3"/>',
+    task: '<rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.3 8.2l1.9 1.9 3.6-4"/>',
+    page: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M6 10.75v-5.5l4 5.5v-5.5"/>',
+    message:
+      '<path d="M3 4.5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2V9a2 2 0 0 1-2 2H7.2L4.4 13.3V11.1A2 2 0 0 1 3 9.2z"/>',
+  };
+  const kindLabel = { reminder: "Reminder", event: "Event", note: "Note", task: "Task", page: "Notion page", message: "Message" };
+
+  // Today's captures are the six "today" rows in the Library; it's 2:47 PM.
+  const DAYS = {
+    yesterday: {
+      count: "2",
+      groups: [
+        {
+          rows: [
+            { kind: "task", text: "book flights for the offsite", where: "Tasks", time: "4:12 PM" },
+            { kind: "page", text: "pricing feels like the real blocker", where: "Notion", time: "11:03 AM" },
+          ],
+        },
+      ],
+    },
+    today: {
+      count: "6",
+      groups: [
+        {
+          label: "Due today",
+          past: true,
+          rows: [
+            { id: "rent", kind: "reminder", text: "Pay rent", where: "Reminders", time: "9:00 AM", due: true, past: true, when: "Today 9:00 AM" },
+            { kind: "event", text: "Dentist, bring the insurance card", where: "Calendar", time: "6:00 PM", due: true },
+          ],
+        },
+        {
+          label: "Captured",
+          rows: [
+            { kind: "reminder", text: "call mom tomorrow at 5pm", where: "Reminders", time: "2:45 PM" },
+            { kind: "event", text: "Q3 roadmap review with design, Thursday 2pm", where: "Calendar", time: "2:29 PM" },
+            { kind: "message", text: "tell #eng the deploy moved to Friday", where: "Slack", time: "2:06 PM" },
+            { kind: "page", text: "weekly digest email of everything I saved", where: "Notion", time: "1:47 PM" },
+            { kind: "task", text: "send Sarah the final deck", where: "Tasks + Slack", time: "11:47 AM" },
+            { kind: "reminder", text: "renew passport before March", where: "Reminders", time: "9:47 AM" },
+          ],
+        },
+      ],
+    },
+    tomorrow: {
+      count: "2 due",
+      groups: [
+        {
+          rows: [
+            { kind: "reminder", text: "Water the plants", where: "Reminders", time: "8:00 AM", due: true },
+            { kind: "reminder", text: "call mom", where: "Reminders", time: "5:00 PM", due: true },
+          ],
+        },
+      ],
+    },
+  };
+
+  const rowHtml = (row, { openId, done }) => {
+    const isOpen = row.id && row.id === openId;
+    const isDone = row.id === "rent" && done;
+    const timeCls = ["mbs-notch-time", row.due ? "is-due" : "", row.past && !isDone ? "is-past" : ""].join(" ");
+    const actions = isDone
+      ? '<span class="is-done">✓ Done</span><span>Undo</span>'
+      : '<span class="is-done">Done</span><span>Snooze</span>';
+    return (
+      `<div class="mbs-notch-row${isOpen ? " is-open" : ""}${isDone ? " is-done" : ""}">` +
+      `<span class="mbs-notch-kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${KIND_PATHS[row.kind]}</svg></span>` +
+      `<span><span class="mbs-notch-text">${row.text}</span>` +
+      (isOpen
+        ? `<span class="mbs-notch-meta">${[kindLabel[row.kind], row.when, row.where].filter(Boolean).join(" · ")}</span>` +
+          `<span class="mbs-notch-actions">${actions}<span>Copy</span></span>`
+        : "") +
+      `</span><span class="mbs-notch-where">${row.where}</span><span class="${timeCls}">${row.time}</span></div>`
+    );
+  };
+
+  const apply = ({ stage, day = "today", openId = null, done = false }) => {
+    notch.dataset.stage = stage;
+    notch.dataset.day = day;
+    const view = DAYS[day];
+    count.textContent = view.count;
+    list.innerHTML = view.groups
+      .map(
+        (group) =>
+          (group.label
+            ? `<div class="mbs-notch-group">${group.label}${group.past && !done ? "<em>1 past</em>" : ""}</div>`
+            : "") + group.rows.map((row) => rowHtml(row, { openId, done })).join(""),
+      )
+      .join("");
+    shape.style.height = stage === "open" ? `${13 + panel.offsetHeight}px` : "";
+  };
+
+  // Each step, with the caption that narrates it.
+  const STEPS = [
+    [1500, { stage: "idle" }, "Every capture lands somewhere. The notch keeps track."],
+    [1900, { stage: "peek" }, "Rest on the notch to see how today went."],
+    [2100, { stage: "open", day: "today" }, "Keep resting and your whole day opens."],
+    [2100, { stage: "open", day: "today", openId: "rent" }, "What's due today sits on top, even if you captured it last week."],
+    [2200, { stage: "open", day: "today", openId: "rent", done: true }, "Finish a reminder without opening Reminders."],
+    [2200, { stage: "open", day: "tomorrow" }, "Tomorrow is one tap away."],
+    [2000, { stage: "open", day: "yesterday" }, "So is yesterday, so nothing slips."],
+    [2000, { stage: "open", day: "today", done: true }, "All without leaving the app you're in."],
+  ];
+
+  let captionTimer = null;
+  const narrate = (text) => {
+    if (!caption) return;
+    window.clearTimeout(captionTimer);
+    caption.classList.remove("is-in");
+    captionTimer = window.setTimeout(() => {
+      caption.textContent = text;
+      caption.classList.toggle("is-in", Boolean(text));
+    }, caption.textContent ? 220 : 0);
+  };
+
+  if (prefersReduced) {
+    apply({ stage: "open", day: "today", openId: "rent" });
+    if (caption) {
+      caption.textContent = "Your day, in the notch: what's due, where everything went.";
+      caption.classList.add("is-in");
+    }
+  } else {
+    let index = 0;
+    let timer = null;
+    let visible = false;
+    let held = false;
+    const tick = () => {
+      const [wait, state, line] = STEPS[index];
+      apply(state);
+      narrate(line);
+      index = (index + 1) % STEPS.length;
+      timer = window.setTimeout(tick, wait);
+    };
+    const stop = () => {
+      window.clearTimeout(timer);
+      timer = null;
+    };
+    const resume = () => {
+      if (visible && !held && !timer) tick();
+    };
+    new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) resume();
+      else stop();
+    }).observe(notch);
+    notch.addEventListener("mouseenter", () => {
+      held = true;
+      stop();
+      apply({ stage: "open", day: notch.dataset.day || "today" });
+      narrate("This is the notch panel. In Chute, resting here opens it.");
+    });
+    notch.addEventListener("mouseleave", () => {
+      held = false;
+      index = 0;
+      resume();
+    });
+    apply(STEPS[0][1]);
   }
 }

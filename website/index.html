@@ -119,8 +119,8 @@
           <div class="demo-halo" aria-hidden="true"></div>
           <div class="routing-demo routing-demo-hero">
             <div class="demo-toast" data-demo-toast hidden aria-hidden="true">
-              <span class="demo-toast-check">✓</span>
-              <span>Sent to <strong data-demo-toast-dest>Reminders</strong></span>
+              <svg class="demo-toast-check" viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Landed in <strong data-demo-toast-dest>Reminders</strong></span>
             </div>
             <div class="routing-demo-window" role="group" aria-label="Live routing demo">
               <div class="routing-demo-head">
@@ -194,12 +194,13 @@
         <div class="mbs-title" data-mbs-title>
           <p class="eyebrow">It lives in your menu bar</p>
           <h2 id="mbs-title">Summon it over anything.<br />File the thought. <span class="accent-serif">Keep working.</span></h2>
+          <p class="mbs-sub">Then it tells you where everything landed, right in the notch.</p>
         </div>
         <div class="mbs-device" data-mbs-device>
         <div class="mbs-lid" aria-hidden="true">
           <div class="mbs-lid-back">
             <div class="mbs-lid-back-inner">
-              <svg class="mbs-lid-logo" viewBox="0 0 60 60" fill="currentColor"><path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z"/><path d="M16 27 L44 27 L34 46 L26 46 Z"/><rect x="24" y="45" width="12" height="9" rx="2"/></svg>
+              <img class="mbs-lid-logo" src="/chute-sphere.svg" alt="" width="12" height="12" />
             </div>
           </div>
           <div class="mbs-screen" data-mbs-screen>
@@ -284,6 +285,28 @@
                   </div>
                 </div>
               </div>
+              <!-- Landed: the notch panel, dropping out of the MacBook's notch. Rows are
+                   drawn by main.js (data-mbs-notch) and mirror the Library behind it. -->
+              <div class="mbs-notch" data-mbs-notch data-stage="idle" data-day="today" aria-hidden="true">
+                <div class="mbs-notch-shape" data-mbs-notch-shape>
+                  <div class="mbs-notch-peek">
+                    <span class="mbs-notch-ear"><img src="/chute-sphere.svg" alt="" width="7" height="7" />6 landed</span>
+                    <span class="mbs-notch-ear"><svg viewBox="0 0 16 16" width="7" height="7"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#5dcaa5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>All in</span>
+                  </div>
+                  <div class="mbs-notch-panel" data-mbs-notch-panel>
+                    <div class="mbs-notch-head">
+                      <span class="mbs-notch-days">
+                        <span data-day="yesterday">Yesterday</span>
+                        <span data-day="today">Today</span>
+                        <span data-day="tomorrow">Tomorrow</span>
+                      </span>
+                      <span class="mbs-notch-count" data-mbs-notch-count>6</span>
+                    </div>
+                    <div class="mbs-notch-list" data-mbs-notch-list></div>
+                  </div>
+                </div>
+                <p class="mbs-notch-caption" data-mbs-notch-caption></p>
+              </div>
             </div>
           </div>
         </div>
@@ -297,7 +320,7 @@
           <div class="mbs-trackpad"></div>
           <div class="mbs-lip"></div>
           <div class="mbs-badge">
-            <span class="mbs-badge-mark"><svg viewBox="0 0 60 60" fill="currentColor"><path d="M6 26 A24 21 0 0 1 54 26 Q46 34 38 26 Q30 34 22 26 Q14 34 6 26 Z"/><path d="M16 27 L44 27 L34 46 L26 46 Z"/><rect x="24" y="45" width="12" height="9" rx="2"/></svg></span>
+            <img class="mbs-badge-mark" src="/chute-sphere.svg" alt="" width="40" height="40" />
           </div>
         </div>
         </div>
@@ -488,16 +511,18 @@
 
           <article class="detail-card">
             <div class="detail-vignette" aria-hidden="true">
-              <div class="dv-menubar">
-                <span class="dv-menubar-cluster">
-                  <img src="/chute-sphere.svg" alt="" width="13" height="13" />
-                  <span class="dv-menubar-dot"></span>
+              <div class="dv-notch">
+                <span class="dv-notch-bar">
+                  <span class="dv-notch-shape">
+                    <span class="dv-notch-ear"><img src="/chute-sphere.svg" alt="" width="10" height="10" />6 landed</span>
+                    <span class="dv-notch-ear"><svg viewBox="0 0 16 16" width="10" height="10"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#5dcaa5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>All in</span>
+                  </span>
+                  <span class="dv-notch-time">2:47 PM</span>
                 </span>
-                <span class="dv-menubar-time">2:47 PM</span>
               </div>
             </div>
-            <h3>Lives in the menu bar</h3>
-            <p>Quiet until you call. No dock icon demanding attention, nothing running loud in the background.</p>
+            <h3>Lands in the notch</h3>
+            <p>Rest on the notch to see where today's captures went and what's due. No dock icon, no window. Screens without a notch get a small tab.</p>
           </article>
 
           <article class="detail-card">
@@ -649,6 +674,20 @@
           <h2 id="changelog-title">Built in public.<br />Shipped <span class="accent-serif">weekly.</span></h2>
         </div>
         <ol class="changelog-list" data-reveal data-reveal-delay="1">
+          <li class="changelog-row">
+            <span class="changelog-date">Oct 22</span>
+            <div class="changelog-body">
+              <span class="changelog-tag">v0.3</span>
+              <p><strong>Finish it from the notch.</strong> Mark a reminder done, or snooze it to later, without opening Reminders. Copy any capture to paste into the app you're in.</p>
+            </div>
+          </li>
+          <li class="changelog-row">
+            <span class="changelog-date">Oct 22</span>
+            <div class="changelog-body">
+              <span class="changelog-tag">v0.3</span>
+              <p><strong>Your day, in the notch.</strong> Rest on the notch to see where every capture went. Yesterday, today and tomorrow are one tap apart, and what's due today sits on top, with anything you missed in red.</p>
+            </div>
+          </li>
           <li class="changelog-row">
             <span class="changelog-date">Jul 16</span>
             <div class="changelog-body">
