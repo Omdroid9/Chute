@@ -48,6 +48,17 @@ export function startVoice(): Promise<void> {
   return invoke("voice_start");
 }
 
+/**
+ * What voice reports the first time access is allowed, instead of recording
+ * on that hold (see VOICE_NOW_ALLOWED in src-tauri/src/mic_permission.rs).
+ * It's good news, so it shows as a note rather than an error.
+ */
+export const VOICE_NOW_ALLOWED = "Voice is on. Hold the key again to talk.";
+
+export function isVoiceNowAllowed(message: string): boolean {
+  return message.trim() === VOICE_NOW_ALLOWED;
+}
+
 export function stopVoice(): Promise<void> {
   return invoke("voice_stop");
 }

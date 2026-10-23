@@ -120,11 +120,6 @@ pub fn show_capture_window(app: &tauri::AppHandle) -> Result<(), String> {
     .emit("chute://show-capture", ())
     .map_err(|error| error.to_string())?;
 
-  // Warm Microphone TCC on the main thread so the first Right ⌘ hold
-  // does not depend on pressing the mic button first.
-  #[cfg(target_os = "macos")]
-  crate::mic_permission::preflight_microphone_access(app);
-
   Ok(())
 }
 
