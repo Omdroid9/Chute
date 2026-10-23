@@ -381,6 +381,8 @@ async function runBootstrap(): Promise<void> {
   await ensureCaptureColumn(db, "routing_reason", "TEXT NULL");
   // When the reminder a capture became was marked done from Landed (UTC).
   await ensureCaptureColumn(db, "completed_at", "DATETIME NULL");
+  // The day a dateless capture (a note) was moved to from Landed (local ISO).
+  await ensureCaptureColumn(db, "planned_at", "DATETIME NULL");
 
   await db.execute(
     `
@@ -894,6 +896,34 @@ export async function getAppendStatesFor(captureIds: string[]): Promise<Map<stri
     states.set(row.capture_id, state);
   }
   return states;
+}
+
+/** Give a dateless capture a day (and time) in Landed: where it was moved to. */
+export async function setCapturePlannedAt(id: string, plannedAt: string | null): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`UPDATE captures SET planned_at = $1 WHERE id = $2;`, [plannedAt, id]);
+}
+
+/**
+ * Captures moved to a local day from Landed (planned_at, a local ISO string).
+ * Fails until the main window has added the column; callers treat that as none.
+ */
+export async function listPlannedOn(dayOffset: number, limit = 100): Promise<Capture[]> {
+  const db = await getDatabase();
+  return db.select<Capture[]>(
+    `
+      SELECT
+        ${CAPTURE_SELECT_FIELDS},
+        captures.planned_at
+      FROM captures
+      LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
+      WHERE captures.planned_at IS NOT NULL
+        AND DATE(captures.planned_at) = DATE('now', 'localtime', $1)
+      ORDER BY captures.planned_at ASC
+      LIMIT $2;
+    `,
+    [dayModifier(dayOffset), limit],
+  );
 }
 
 /** Mark a capture's reminder done (or not done again) after Reminders agreed. */

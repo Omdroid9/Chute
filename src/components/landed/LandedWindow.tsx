@@ -11,6 +11,7 @@ import {
   getSetting,
   listCapturesCreatedOn,
   listDueCandidatesOn,
+  listPlannedOn,
   retryCaptureAppends,
   setCaptureSyncError,
   setSetting,
@@ -23,23 +24,27 @@ import {
   actionableReminder,
   countLanded,
   formatWhen,
+  moveKindOf,
   primaryTarget,
   toLandedRow,
   type LandedCounts,
   type LandedKind,
   type LandedRow,
   type LandedStatus,
+  type MoveKind,
 } from "./landedRows";
 import { openTarget } from "./landedActions";
-import { setReminderDone, snoozeReminder } from "./landedReminders";
+import { moveToDay, setReminderDone, snoozeReminder } from "./landedReminders";
 import {
   EMPTY_TEXT,
   EMPTY_VIEWS,
   LANDED_DAYS,
+  canDropOn,
   dueOn,
   failedIds,
   groupsOf,
   headCount,
+  moveTime,
   pastDue,
   patchRow,
   rowsOf,
@@ -50,7 +55,7 @@ import {
   type LandedViews,
 } from "./landedDays";
 import { parseStoredTimestamp } from "../../lib/timestamps";
-import { formatClockTime } from "../../lib/reminderTime";
+import { formatClockTime, parseReminderTime } from "../../lib/reminderTime";
 import { toLocalIso } from "../../lib/recurrence";
 import { SNOOZE_LABELS, snoozeChoices, snoozeUntil, type SnoozeChoice } from "../../lib/snooze";
 import {
@@ -97,6 +102,11 @@ const PRESS_DEDUPE_PX = 8;
 const EXPAND_DELAY_MS = 350;
 /** Room kept below the open panel for its shadow. */
 const PANEL_SHADOW_ROOM = 24;
+/** A press on a movable row becomes a drag once it travels this far. */
+const DRAG_START_PX = 6;
+/** A press with no release heard (WebKit can drop it) counts as a click after this. */
+const CLICK_FALLBACK_MS = 700;
+const MOVED_NOTICE_MS = 2600;
 /** After the peek shows, keep resting this long and the panel opens. */
 const REST_OPEN_MS = 650;
 const COPIED_MS = 1400;
@@ -211,6 +221,18 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
   }
   return <span className="landed-muted">Nothing yet</span>;
 }
+
+/** A row picked up from the list, following the pointer to a day in the pill. */
+interface Drag {
+  row: LandedRow;
+  kind: MoveKind;
+  x: number;
+  y: number;
+  /** The day under the pointer it can be dropped on. */
+  over: LandedDay | null;
+}
+
+const dayLabel = (day: LandedDay) => LANDED_DAYS.find((option) => option.day === day)?.label ?? day;
 
 function dayAt(element: Element | null | undefined): LandedDay | null {
   const value = element?.closest<HTMLElement>("[data-day]")?.dataset.day;
@@ -328,6 +350,11 @@ export default function LandedWindow() {
   const [snoozing, setSnoozing] = useState<ReadonlyMap<string, SnoozeChoice>>(new Map());
   /** Done or Snooze that Reminders refused, by capture; cleared when the panel closes. */
   const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  /** "Moved to Tomorrow · 9:00 AM", by capture, for a moment after a drop. */
+  const [rowNotices, setRowNotices] = useState<ReadonlyMap<string, string>>(new Map());
+  const [drag, setDrag] = useState<Drag | null>(null);
+  /** The day a drop just landed on, flashed in the pill. */
+  const [flashDay, setFlashDay] = useState<LandedDay | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
   const [tipHeight, setTipHeight] = useState(96);
@@ -357,6 +384,12 @@ export default function LandedWindow() {
   const busy = useRef(new Set<string>());
   /** Done/Undo not yet confirmed by Reminders; a refresh meanwhile keeps showing it. */
   const doneInFlight = useRef(new Map<string, boolean>());
+  const viewsRef = useRef<LandedViews>(EMPTY_VIEWS);
+  const dragRef = useRef<Drag | null>(null);
+  /** A press on a movable row, waiting to become a click (release) or a drag (move). */
+  const pendingRef = useRef<{ row: LandedRow; kind: MoveKind; x: number; y: number } | null>(null);
+  const pendingTimer = useRef<number | undefined>(undefined);
+  const flashTimer = useRef<number | undefined>(undefined);
   const closeTimer = useRef<number | undefined>(undefined);
   const confTimer = useRef<number | undefined>(undefined);
   const refreshSeq = useRef(0);
@@ -372,6 +405,7 @@ export default function LandedWindow() {
   // Event handlers are subscribed once; they read the latest state from refs.
   useLayoutEffect(() => {
     rowsRef.current = [views.today, views.yesterday, views.tomorrow].flatMap(rowsOf);
+    viewsRef.current = views;
     notionPageIdRef.current = notionPageId;
     settingsOpenedRef.current = settingsOpened;
     tipSeenRef.current = tipSeen;
@@ -398,6 +432,10 @@ export default function LandedWindow() {
       if (next !== "open") {
         hoverRow(null);
         setHoverDay(null);
+        // Closing drops nothing: a drag in progress is put back.
+        pendingRef.current = null;
+        dragRef.current = null;
+        setDrag(null);
       }
       if (next === "idle") {
         setDay("today");
@@ -439,15 +477,23 @@ export default function LandedWindow() {
     const seq = ++refreshSeq.current;
     try {
       const now = new Date();
-      const [today, yesterday, todayCandidates, tomorrowCandidates, config] = await Promise.all([
-        listCapturesCreatedOn(0),
-        listCapturesCreatedOn(-1),
-        listDueCandidatesOn(0),
-        listDueCandidatesOn(1),
-        loadSyncConfig(),
-      ]);
-      const dueToday = dueOn(todayCandidates, startOfLocalDay(0, now), now);
-      const dueTomorrow = dueOn(tomorrowCandidates, startOfLocalDay(1, now), now);
+      const [today, yesterday, todayCandidates, tomorrowCandidates, todayPlanned, tomorrowPlanned, config] =
+        await Promise.all([
+          listCapturesCreatedOn(0),
+          listCapturesCreatedOn(-1),
+          listDueCandidatesOn(0),
+          listDueCandidatesOn(1),
+          // Moved here from another day; the main window adds planned_at on launch.
+          listPlannedOn(0).catch(() => [] as Capture[]),
+          listPlannedOn(1).catch(() => [] as Capture[]),
+          loadSyncConfig(),
+        ]);
+      // One copy of each capture, the planned one (it knows its day) winning.
+      const merged = (due: Capture[], planned: Capture[]) => [
+        ...new Map([...due, ...planned].map((capture) => [capture.id, capture])).values(),
+      ];
+      const dueToday = dueOn(merged(todayCandidates, todayPlanned), startOfLocalDay(0, now), now);
+      const dueTomorrow = dueOn(merged(tomorrowCandidates, tomorrowPlanned), startOfLocalDay(1, now), now);
       const captures = [...today, ...yesterday, ...[...dueToday, ...dueTomorrow].map((item) => item.capture)];
       const ids = [...new Set(captures.map((c) => c.id))];
       const [links, appends, completed] = await Promise.all([
@@ -511,18 +557,114 @@ export default function LandedWindow() {
     [close, refresh],
   );
 
-  const setRowError = useCallback((id: string, error: unknown) => {
+  const setRowError = useCallback((id: string, error: unknown, app = "Reminders") => {
     setRowErrors((current) => {
       const next = new Map(current);
       if (error === null) {
         next.delete(id);
       } else {
         const message = error instanceof Error ? error.message : String(error);
-        next.set(id, describeSyncError(`Reminders: ${message}`)?.message ?? message);
+        next.set(id, describeSyncError(`${app}: ${message}`)?.message ?? message);
       }
       return next;
     });
   }, []);
+
+  const notify = useCallback((id: string, text: string | null) => {
+    setRowNotices((current) => {
+      const next = new Map(current);
+      if (text === null) next.delete(id);
+      else next.set(id, text);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Drop a row on a day: a reminder or event moves in its app, anything else
+   * gets the day and a reminder. It keeps its time of day; moved to today it
+   * never lands in the past.
+   */
+  const dropOn = useCallback(
+    async (row: LandedRow, kind: MoveKind, day: LandedDay) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      const now = new Date();
+      const offset = LANDED_DAYS.find((option) => option.day === day)?.offset ?? 0;
+      const own = kind === "plan" ? row.plannedAt : row.reminderTime;
+      const from = own ? parseReminderTime(own) : null;
+      const valid = from && !Number.isNaN(from.getTime()) ? from : null;
+      const allDay = kind === "event" && valid !== null && valid.getHours() === 0 && valid.getMinutes() === 0;
+      const at = moveTime(valid, startOfLocalDay(offset, now), now, allDay);
+      setRowError(row.id, null);
+      notify(row.id, `Moving to ${dayLabel(day)}…`);
+      clearTimer(flashTimer);
+      setFlashDay(day);
+      flashTimer.current = window.setTimeout(() => setFlashDay(null), 900);
+      try {
+        await moveToDay(row, kind, toLocalIso(at));
+        const when = allDay ? dayLabel(day) : `${dayLabel(day)} · ${formatClockTime(at)}`;
+        notify(row.id, kind === "plan" ? `Moved to ${when} · reminder set` : `Moved to ${when}`);
+        window.setTimeout(() => notify(row.id, null), MOVED_NOTICE_MS);
+      } catch (error) {
+        console.error("Landed: could not move the capture", error);
+        notify(row.id, null);
+        setRowError(row.id, error, kind === "event" ? "Calendar" : "Reminders");
+      } finally {
+        busy.current.delete(row.id);
+      }
+    },
+    [notify, setRowError],
+  );
+
+  const setDragState = useCallback((next: Drag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  }, []);
+
+  /** Open a row where it landed (a click on it). */
+  const openRow = useCallback(
+    (row: LandedRow) => {
+      void openTarget(row, primaryTarget(row), notionPageIdRef.current).catch((error) =>
+        console.error("Landed: could not open the capture", error),
+      );
+      close(true);
+    },
+    [close],
+  );
+
+  /** The press on a movable row ended: a drop if it was dragged, else a click. */
+  const release = useCallback(() => {
+    clearTimer(pendingTimer);
+    const dragging = dragRef.current;
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (dragging) {
+      setDragState(null);
+      if (dragging.over) void dropOn(dragging.row, dragging.kind, dragging.over);
+      return;
+    }
+    if (pending) openRow(pending.row);
+  }, [dropOn, openRow, setDragState]);
+
+  /** The pointer moved with a button down: start or carry a drag. */
+  const dragTo = useCallback(
+    (x: number, y: number) => {
+      const pending = pendingRef.current;
+      const current = dragRef.current;
+      if (!current) {
+        if (!pending || Math.hypot(x - pending.x, y - pending.y) < DRAG_START_PX) return;
+        clearTimer(pendingTimer);
+        hoverRow(null);
+        setHoverDay(null);
+      }
+      const row = current?.row ?? pending!.row;
+      const kind = current?.kind ?? pending!.kind;
+      const day = dayAt(document.elementFromPoint(x, y));
+      const over = day && canDropOn(viewsRef.current, row.id, day) ? day : null;
+      setDragState({ row, kind, x, y, over });
+    },
+    [hoverRow, setDragState],
+  );
 
   /** Done (or Undo): reads as done at once, and goes back if Reminders refuses. */
   const markDone = useCallback(
@@ -650,17 +792,26 @@ export default function LandedWindow() {
         return;
       }
       if (row) {
-        void openTarget(row, primaryTarget(row), notionPageIdRef.current).catch((error) =>
-          console.error("Landed: could not open the capture", error),
-        );
-        close(true);
+        // A movable row waits: released in place it opens; moved, it's picked up.
+        const kind = moveKindOf(row);
+        if (!kind) {
+          openRow(row);
+          return;
+        }
+        pendingRef.current = { row, kind, x, y };
+        clearTimer(pendingTimer);
+        pendingTimer.current = window.setTimeout(() => {
+          pendingTimer.current = undefined;
+          // No release came through, but no button is held either: a click.
+          if (pendingRef.current?.row.id === row.id && !dragRef.current && !pointerRef.current?.buttons) release();
+        }, CLICK_FALLBACK_MS);
         return;
       }
       if (element.closest(".landed-shape") && stageRef.current !== "open") {
         openPanel("pointer");
       }
     },
-    [close, fix, markDone, markTipSeen, openPanel, snooze],
+    [close, fix, markDone, markTipSeen, openPanel, openRow, release, snooze],
   );
 
   const showConfirmation = useCallback(
@@ -683,6 +834,21 @@ export default function LandedWindow() {
       setNear(pointer.near);
       const current = stageRef.current;
       const pressed = pointer.buttons && !previous?.buttons;
+      const released = !pointer.buttons && Boolean(previous?.buttons);
+
+      // A press on a movable row: released it's a click or a drop; held and
+      // moved it's a drag, which keeps the panel open even past its edge.
+      if (pendingRef.current || dragRef.current) {
+        if (released) {
+          release();
+          // Let go outside the panel: carry on below, so it closes as usual.
+          if (pointer.inside) return;
+        } else if (pointer.buttons) {
+          if (pointer.inside) dragTo(pointer.x, pointer.y);
+          else if (dragRef.current) setDragState({ ...dragRef.current, over: null });
+          return;
+        }
+      }
 
       // Opened from the menu bar: stay open until the pointer arrives, and
       // close on a click anywhere else.
@@ -762,6 +928,16 @@ export default function LandedWindow() {
       }
     };
 
+    // WebKit's own mouse events, when it delivers them, make the drag smoother.
+    const onMouseMove = (event: MouseEvent) => {
+      if ((pendingRef.current || dragRef.current) && event.buttons) dragTo(event.clientX, event.clientY);
+    };
+    const onMouseUp = () => {
+      if (pendingRef.current || dragRef.current) release();
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
     const unlisteners = [
       listen<Pointer>("landed://pointer", (event) => onPointer(event.payload)),
       listen<Geometry>("landed://geometry", (event) => setGeometry(event.payload)),
@@ -785,9 +961,13 @@ export default function LandedWindow() {
       clearTimer(restTimer);
       clearTimer(copiedTimer);
       clearTimer(snoozedTimer);
+      clearTimer(pendingTimer);
+      clearTimer(flashTimer);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
-  }, [close, go, hoverRow, openPanel, press, refresh, showConfirmation]);
+  }, [close, dragTo, go, hoverRow, openPanel, press, refresh, release, setDragState, showConfirmation]);
 
   // Read the user's settings, then show the panel (it starts hidden natively).
   useEffect(() => {
@@ -905,6 +1085,7 @@ export default function LandedWindow() {
         row.done ? "is-done" : "",
         hoverId === row.id ? "is-hover" : "",
         expandedId === row.id ? "is-expanded" : "",
+        drag?.row.id === row.id ? "is-lifted" : "",
       ].join(" ")}
     >
       <KindIcon kind={row.kind} status={row.status} />
@@ -915,6 +1096,7 @@ export default function LandedWindow() {
             <span className="landed-row-meta">
               <span>
                 {[KIND_LABELS[row.kind], when, row.status === "kept" ? null : row.where].filter(Boolean).join(" · ")}
+                {moveKindOf(row) && <span className="landed-row-hint"> · drag to a day to move it</span>}
               </span>
               <span className="landed-row-actions">
                 <CopyAction copied={copiedId === row.id} />
@@ -939,6 +1121,7 @@ export default function LandedWindow() {
         )}
         {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
         {rowErrors.has(row.id) && <span className="landed-row-note">{rowErrors.get(row.id)}</span>}
+        {rowNotices.has(row.id) && <span className="landed-row-note is-ok">{rowNotices.get(row.id)}</span>}
       </span>
       {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
         <span className="landed-row-fix" data-action="fix">
@@ -1028,7 +1211,15 @@ export default function LandedWindow() {
                     key={option}
                     data-action="day"
                     data-day={option}
-                    className={`landed-day${option === day ? " is-active" : ""}${hoverDay === option ? " is-hover" : ""}`}
+                    className={[
+                      "landed-day",
+                      option === day ? "is-active" : "",
+                      hoverDay === option && !drag ? "is-hover" : "",
+                      // While dragging: Today and Tomorrow take the drop, Yesterday steps back.
+                      drag ? (canDropOn(views, drag.row.id, option) ? "is-drop-target" : "is-drop-off") : "",
+                      drag?.over === option ? "is-drop-over" : "",
+                      flashDay === option ? "is-flash" : "",
+                    ].join(" ")}
                   >
                     {label}
                     {option !== day && rowsOf(views[option]).some((row) => row.status === "failed") && (
@@ -1073,6 +1264,15 @@ export default function LandedWindow() {
           </div>
         </div>
       </div>
+
+      {drag && (
+        // What's being carried, under the pointer; it never catches the pointer itself.
+        <div className="landed-ghost" style={{ left: drag.x + 12, top: drag.y + 10 }} aria-hidden>
+          <KindIcon kind={drag.row.kind} status={drag.row.status} />
+          <span className="landed-ghost-text">{drag.row.text}</span>
+          {drag.over && <span className="landed-ghost-to">{dayLabel(drag.over)}</span>}
+        </div>
+      )}
 
       {tip && (
         <div

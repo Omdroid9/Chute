@@ -299,6 +299,7 @@ fn main() {
       apple_items::append_to_reminder,
       apple_items::append_to_apple_note,
       apple_items::append_to_calendar_event,
+      apple_items::move_calendar_event,
       apple_items::set_reminder_completed,
       apple_items::snooze_reminder,
       apple_items::find_apple_item

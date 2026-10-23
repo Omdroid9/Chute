@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { LandedRow } from "./landedRows";
 import {
+  canDropOn,
   dueOn,
   dueTimeOn,
+  moveTime,
   failedIds,
   groupsOf,
   headCount,
@@ -44,6 +46,8 @@ function row(id: string, status: LandedRow["status"] = "landed"): LandedRow {
     reminderTime: null,
     recurring: false,
     done: false,
+    plannedAt: null,
+    planLink: null,
     createdAt: "2026-10-21 12:00:00",
   };
 }
@@ -243,5 +247,59 @@ describe("patchRow", () => {
     expect(next.today.due[0].dueAt).toBe(views.today.due[0].dueAt);
     expect(next.yesterday.captured[0]).toBe(views.yesterday.captured[0]);
     expect(views.today.due[0].row.done).toBe(false);
+  });
+});
+
+describe("a moved note's day", () => {
+  it("counts as due on the day it was moved to", () => {
+    const note = capture({ planned_at: "2026-10-22T09:00:00" });
+    expect(dueTimeOn(note, tomorrow, now)).toEqual(new Date(2026, 9, 22, 9, 0));
+    expect(dueTimeOn(note, today, now)).toBeNull();
+  });
+});
+
+describe("moveTime", () => {
+  it("keeps the item's time of day on the new day", () => {
+    expect(moveTime(new Date(2026, 9, 20, 15, 30), tomorrow, now)).toEqual(new Date(2026, 9, 22, 15, 30));
+  });
+
+  it("uses 9 AM when the item has no time", () => {
+    expect(moveTime(null, tomorrow, now)).toEqual(new Date(2026, 9, 22, 9, 0));
+  });
+
+  it("never lands in the past today: the next whole hour instead", () => {
+    // It's 2:00 PM; yesterday's 11 AM item moved to today lands at 3 PM.
+    expect(moveTime(new Date(2026, 9, 20, 11, 0), today, now)).toEqual(new Date(2026, 9, 21, 15, 0));
+    expect(moveTime(new Date(2026, 9, 20, 18, 0), today, now)).toEqual(new Date(2026, 9, 21, 18, 0));
+  });
+
+  it("stays on today late at night", () => {
+    const late = new Date(2026, 9, 21, 23, 40);
+    expect(moveTime(new Date(2026, 9, 20, 9, 0), today, late)).toEqual(new Date(2026, 9, 21, 23, 59));
+  });
+
+  it("keeps an all-day event at midnight", () => {
+    expect(moveTime(new Date(2026, 9, 20, 0, 0), today, now, true)).toEqual(new Date(2026, 9, 21, 0, 0));
+  });
+});
+
+describe("canDropOn", () => {
+  const views = {
+    yesterday: { due: [], captured: [row("y")] },
+    today: { due: [due("already")], captured: [row("t")] },
+    tomorrow: { due: [], captured: [] },
+  };
+
+  it("takes today and tomorrow, never yesterday", () => {
+    expect(canDropOn(views, "y", "today")).toBe(true);
+    expect(canDropOn(views, "y", "tomorrow")).toBe(true);
+    expect(canDropOn(views, "t", "yesterday")).toBe(false);
+  });
+
+  it("refuses a day the item is already due on", () => {
+    expect(canDropOn(views, "already", "today")).toBe(false);
+    expect(canDropOn(views, "already", "tomorrow")).toBe(true);
+    // Captured today but not due yet: dropping on today gives it a time today.
+    expect(canDropOn(views, "t", "today")).toBe(true);
   });
 });

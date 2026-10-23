@@ -89,8 +89,11 @@ export function dueTimeOn(capture: Capture, dayStart: Date, now: Date): Date | n
   const end = startOfLocalDay(1, dayStart).getTime();
 
   const times = repeatsOn(capture, start, end);
-  const once = capture.reminder_time ? parseReminderTime(capture.reminder_time) : null;
-  if (once && once.getTime() >= start && once.getTime() < end) times.push(once);
+  // Its reminder time, and the day it was moved to from Landed if it has no date of its own.
+  for (const value of [capture.reminder_time, capture.planned_at]) {
+    const once = value ? parseReminderTime(value) : null;
+    if (once && once.getTime() >= start && once.getTime() < end) times.push(once);
+  }
   if (times.length === 0) return null;
 
   const upcoming = times.filter((time) => time >= now);
@@ -143,6 +146,37 @@ export function headCount(day: LandedDay, view: LandedView): string {
 /** Due rows whose time has gone by and that aren't marked done. */
 export function pastDue(view: LandedView): DueRow[] {
   return view.due.filter((item) => item.past && !item.row.done);
+}
+
+/** Days a row can be dragged onto: things only move forward. */
+export const DROP_DAYS: ReadonlyArray<LandedDay> = ["today", "tomorrow"];
+
+/** Whether a row can be dropped on a day: not one it's already due on. */
+export function canDropOn(views: LandedViews, rowId: string, day: LandedDay): boolean {
+  return DROP_DAYS.includes(day) && !views[day].due.some((item) => item.row.id === rowId);
+}
+
+/** Hour a moved item without a time of its own lands at. */
+const MOVE_HOUR = 9;
+
+/**
+ * When a moved item lands on the day starting at `dayStart`: at its own time
+ * of day, else 9 AM. Moved to today it never lands in the past: a time already
+ * gone becomes the next whole hour (at most the day's last minute). An all-day
+ * event keeps its midnight.
+ */
+export function moveTime(from: Date | null, dayStart: Date, now: Date, allDay = false): Date {
+  const at = new Date(
+    dayStart.getFullYear(),
+    dayStart.getMonth(),
+    dayStart.getDate(),
+    from ? from.getHours() : MOVE_HOUR,
+    from ? from.getMinutes() : 0,
+  );
+  if (allDay || at > now) return at;
+  const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1);
+  const lastMinute = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate(), 23, 59);
+  return nextHour < lastMinute ? nextHour : lastMinute;
 }
 
 /** Captures that failed anywhere the panel can show, counted once each. */

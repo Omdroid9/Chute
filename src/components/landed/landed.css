@@ -312,6 +312,27 @@ html[data-window="landed"] body {
   color: #fff;
 }
 
+/* Dragging a row: the days it can move to open up as targets. */
+.landed-day.is-drop-target {
+  box-shadow: inset 0 0 0 1px rgba(93, 202, 165, 0.45);
+  color: #fff;
+}
+
+.landed-day.is-drop-over {
+  background: rgba(93, 202, 165, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(93, 202, 165, 0.9);
+  color: #fff;
+}
+
+.landed-day.is-drop-off {
+  opacity: 0.35;
+}
+
+.landed-day.is-flash {
+  background: rgba(93, 202, 165, 0.28);
+  color: #fff;
+}
+
 .landed-head-count {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -485,6 +506,56 @@ html[data-window="landed"] body {
   white-space: nowrap;
   color: rgba(250, 199, 117, 0.85);
   font-size: 11px;
+}
+
+.landed-row-note.is-ok {
+  color: var(--landed-green);
+}
+
+.landed-row-hint {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* The row being carried stays in place, faded, until it's dropped. */
+.landed-row.is-lifted {
+  opacity: 0.35;
+}
+
+/* What's being carried, following the pointer. */
+.landed-ghost {
+  --row-bg: #1c1c1e;
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  padding: 5px 10px 5px 7px;
+  border-radius: 9px;
+  background: #1c1c1e;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.16),
+    0 10px 26px -6px rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+  transform: rotate(-1.5deg);
+}
+
+.landed-ghost-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landed-ghost-to {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(93, 202, 165, 0.22);
+  color: var(--landed-green);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .landed-row-fix {
