@@ -60,6 +60,8 @@ export default {
       email,
       number: Number((await env.SIGNUPS.get("count")) ?? 0) + 1,
       at: new Date().toISOString(),
+      // The installer they picked on the form, and the device they used.
+      wants: { mac: "Mac", windows: "Windows" }[String(fields.platform ?? "").toLowerCase()] ?? null,
       platform: platformOf(ua),
       city: request.cf?.city ?? null,
       country: request.cf?.country ?? null,

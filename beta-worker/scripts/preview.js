@@ -15,6 +15,7 @@ const env = {
 const signup = {
   email: "jane.cooper@gmail.com",
   number: 12,
+  wants: "Mac",
   at: new Date().toISOString(),
   platform: "Mac",
   city: "San Francisco",

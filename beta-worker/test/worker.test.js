@@ -84,6 +84,23 @@ test("a new signup notifies us, confirms to them, and is saved", async () => {
   assert.equal(env.SIGNUPS._map.get("count"), "1");
 });
 
+test("the installer picked on the form wins over the device", async () => {
+  await post({ email: "jane@example.com", platform: "windows" });
+  const [notify, confirm] = sent;
+  assert.match(notify.html, /Send the Windows installer \(\.exe\)/);
+  assert.match(notify.text, /Wants: Windows\nDevice: Mac/);
+  assert.match(confirm.html, /Your Windows installer will come from this address/);
+  assert.doesNotMatch(confirm.text, /Mac or Windows\?/);
+  assert.match(confirm.text, /first thing you'd capture/);
+  assert.equal(JSON.parse(env.SIGNUPS._map.get("signup:jane@example.com")).wants, "Windows");
+});
+
+test("an unknown installer choice is ignored", async () => {
+  await post({ email: "jane@example.com", platform: "linux" });
+  assert.match(sent[0].text, /Wants: Not chosen/);
+  assert.match(sent[1].text, /Mac or Windows\?/);
+});
+
 test("a repeat signup gets a friendly answer and no emails", async () => {
   await post({ email: "jane@example.com" });
   sent.length = 0;

@@ -4438,6 +4438,66 @@ main h2 .accent-serif {
   transform: none;
 }
 
+/* Which installer to send, pre-picked from the visitor's computer */
+.cta-window-os {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+
+.cta-window-os-label {
+  margin-right: 0.2rem;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-deep);
+}
+
+.cta-os {
+  position: relative;
+  cursor: pointer;
+}
+
+.cta-os input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cta-os span {
+  display: inline-block;
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease);
+}
+
+.cta-os:hover span {
+  color: var(--text);
+}
+
+.cta-os input:checked + span {
+  color: var(--text-strong);
+  border-color: rgba(122, 169, 238, 0.45);
+  background: rgba(122, 169, 238, 0.12);
+}
+
+.cta-os input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cta-os input:disabled + span {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .cta-window-reason {
   display: flex;
   align-items: baseline;

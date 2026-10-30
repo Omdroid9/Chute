@@ -667,33 +667,50 @@ if (ctaForm) {
     ctaForm.classList.toggle("is-error", state === "error");
   };
 
-  input.addEventListener("input", () => {
+  const osInputs = [...ctaForm.querySelectorAll('input[name="platform"]')];
+  const OS_NAME = { mac: "Mac", windows: "Windows" };
+  const chosenOS = () => OS_NAME[osInputs.find((o) => o.checked)?.value] ?? null;
+
+  // Pre-pick the installer for the computer they're on, so most people just
+  // send. Phones and tablets get no guess (an iPad says Macintosh, with touch).
+  const ua = navigator.userAgent;
+  const onPhone = /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const guess = onPhone ? null : /Mac/.test(ua) ? "mac" : /Windows/.test(ua) ? "windows" : null;
+  const guessed = osInputs.find((o) => o.value === guess);
+  if (guessed) guessed.checked = true;
+
+  const describe = () => {
     const value = input.value.trim();
     if (!value) {
       setReason("Looks like an invite request → your inbox", null);
-    } else if (EMAIL_OK.test(value)) {
-      setReason(`Looks like an email → beta list · Enter sends`, null);
-    } else {
+    } else if (!EMAIL_OK.test(value)) {
       setReason("Keep typing, that's not a full email yet", null);
+    } else if (!chosenOS()) {
+      setReason("Looks like an email → pick Mac or Windows", null);
+    } else {
+      setReason(`Looks like an email → ${chosenOS()} beta list · Enter sends`, null);
     }
-  });
+  };
+  input.addEventListener("input", describe);
+  for (const o of osInputs) o.addEventListener("change", describe);
 
-  const done = (already) => {
+  const done = (already, os) => {
     setReason(
       already
         ? "You're already on the list. Your installer comes by email"
-        : "Got it. You're on the list, check your inbox",
+        : `Got it. You're on the ${os ? `${os} ` : ""}list, check your inbox`,
       "sent",
     );
     if (sendBtn) sendBtn.disabled = true;
     input.disabled = true;
+    for (const o of osInputs) o.disabled = true;
   };
 
   // Without JS the browser posts the form itself and the Worker sends the
   // visitor back here with ?beta=thanks (or error).
   const back = new URLSearchParams(location.search).get("beta");
   if (back) {
-    if (back === "thanks") done(false);
+    if (back === "thanks") done(false, null);
     else setReason("That didn't go through. Try again, or write to hello@usechute.com", "error");
     history.replaceState(null, "", location.pathname + location.hash);
   }
@@ -711,6 +728,11 @@ if (ctaForm) {
       input.focus();
       return;
     }
+    if (!chosenOS()) {
+      setReason("Pick Mac or Windows, so the right installer comes", "error");
+      osInputs[0]?.focus();
+      return;
+    }
     sending = true;
     if (sendBtn) sendBtn.disabled = true;
     setReason("Sending…", null);
@@ -724,7 +746,7 @@ if (ctaForm) {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        done(body.already === true);
+        done(body.already === true, chosenOS());
       } else {
         // Too many tries (429) and a rejected address (422) explain themselves.
         const told = (res.status === 429 || res.status === 422) && body.error;

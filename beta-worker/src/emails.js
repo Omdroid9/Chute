@@ -177,7 +177,7 @@ const para = (html, top = 18) =>
 
 // The site's beta form is drawn as a Chute capture window; the email shows
 // the same window, filled in and sent.
-const captureWindow = (logo, email) => `
+const captureWindow = (logo, email, status) => `
 <table role="presentation" class="panel" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.panel}" style="margin:28px 0 30px;background:${C.panel};border:1px solid ${C.panelBorder};border-radius:14px;">
   <tr><td class="bd" style="padding:12px 16px;border-bottom:1px solid ${C.border};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
@@ -193,7 +193,7 @@ const captureWindow = (logo, email) => `
     </table>
   </td></tr>
   <tr><td class="t-dim" style="padding:10px 16px 14px;font-family:${SANS};font-size:12px;color:${C.dim};">
-    <span class="t-ok" style="color:${C.green};">&#9679;</span>&nbsp; On the list &rarr; your installer comes by email
+    <span class="t-ok" style="color:${C.green};">&#9679;</span>&nbsp; On the list &rarr; ${status}
   </td></tr>
 </table>`;
 
@@ -212,7 +212,15 @@ ${items
 export function confirmationEmail(signup, env) {
   const site = env.SITE_URL;
   const logo = `${site}/email/chute-sphere.png`;
-  const asks = ["Mac or Windows?", "The first thing you'd capture with it."];
+  const { wants } = signup;
+  const intro = wants
+    ? `Thanks for asking to try Chute. It's in closed beta, so every installer goes out by hand. Your ${wants} installer will come from this address.`
+    : "Thanks for asking to try Chute. It's in closed beta, so every installer goes out by hand, and yours will come from this address.";
+  const status = wants ? `your ${wants} installer comes by email` : "your installer comes by email";
+  // The form asks which installer they want; if it didn't reach us, the
+  // email asks, since the right download can't go out without it.
+  const asks = wants ? null : ["Mac or Windows?", "The first thing you'd capture with it."];
+  const question = "One question while you wait: what's the first thing you'd capture with it? Just hit reply. I read every one.";
 
   const html = shell({
     title: "You're on the list",
@@ -220,10 +228,10 @@ export function confirmationEmail(signup, env) {
     body: `${brandRow(logo)}
 ${card(`
   <h1 class="h1 t-strong" style="margin:0;font-family:${DISPLAY};font-size:40px;line-height:1.08;font-weight:700;letter-spacing:-1.2px;color:${C.strong};">You're on the <span style="font-family:${SERIF};font-style:italic;font-weight:400;letter-spacing:-0.4px;">list.</span></h1>
-  ${para("Thanks for asking to try Chute. It's in closed beta, so every installer goes out by hand, and yours will come from this address.")}
-  ${captureWindow(logo, unlinked(signup.email))}
-  ${para("Reply to this email with two things, so I send you the right one:", 0)}
-  ${numbered(asks)}
+  ${para(intro)}
+  ${captureWindow(logo, unlinked(signup.email), status)}
+  ${asks ? `${para("Reply to this email with two things, so I send you the right one:", 0)}
+  ${numbered(asks)}` : para(question, 0)}
   <p class="t-strong" style="margin:30px 0 0;font-family:${SANS};font-size:15px;font-weight:600;color:${C.strong};">Omkar</p>
   <p class="t-dim" style="margin:2px 0 0;font-family:${SANS};font-size:13px;color:${C.dim};">Making Chute &middot; <a href="${site}" class="t-dim" style="color:${C.dim};text-decoration:underline;">usechute.com</a></p>
 `)}
@@ -233,10 +241,11 @@ ${footer(`You're getting this because ${unlinked(signup.email)} asked for Chute 
   const text = [
     "You're on the list.",
     "",
-    "Thanks for asking to try Chute. It's in closed beta, so every installer goes out by hand, and yours will come from this address.",
+    intro,
     "",
-    "Reply to this email with two things, so I send you the right one:",
-    ...asks.map((a, i) => `${i + 1}. ${a}`),
+    ...(asks
+      ? ["Reply to this email with two things, so I send you the right one:", ...asks.map((a, i) => `${i + 1}. ${a}`)]
+      : [question]),
     "",
     "Omkar",
     `Making Chute · ${site}`,
@@ -255,19 +264,19 @@ ${footer(`You're getting this because ${unlinked(signup.email)} asked for Chute 
 
 export function notificationEmail(signup, env) {
   const logo = `${env.SITE_URL}/email/chute-sphere.png`;
-  const { email, platform, number } = signup;
+  const { email, wants, platform, number } = signup;
   const place = placeOf(signup);
   const when = whenOf(signup.at, env.TIMEZONE);
-  const hint =
-    platform === "Mac"
-      ? "Send the Mac installer (.dmg)."
-      : platform === "Windows"
-        ? "Send the Windows installer (.exe)."
-        : platform
-          ? `They signed up on ${platform}. Ask whether they use a Mac or Windows.`
-          : "Ask whether they use a Mac or Windows.";
+  // What they picked on the form wins; the device is a fallback guess.
+  const pick = wants ?? (platform === "Mac" || platform === "Windows" ? platform : null);
+  const hint = pick
+    ? `Send the ${pick} installer (${pick === "Mac" ? ".dmg" : ".exe"}).`
+    : platform
+      ? `They signed up on ${platform}. Ask whether they use a Mac or Windows.`
+      : "Ask whether they use a Mac or Windows.";
   const rows = [
-    ["On", platform ?? "Unknown"],
+    ["Wants", wants ?? "Not chosen"],
+    ["Device", platform ?? "Unknown"],
     ["From", place ?? "Unknown"],
     ["When", when],
     ["Page", pageOf(signup.page) ?? "usechute.com"],
@@ -276,7 +285,7 @@ export function notificationEmail(signup, env) {
 
   const html = shell({
     title: `Beta request #${number}`,
-    preheader: [platform, place, when].filter(Boolean).join(" · "),
+    preheader: [wants ? `${wants} installer` : platform, place, when].filter(Boolean).join(" · "),
     body: `${brandRow(logo, `Beta request &middot; #${number}`)}
 ${card(`
   <p class="t-accent" style="margin:0;font-family:${MONO};font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${C.accent};">New signup</p>
