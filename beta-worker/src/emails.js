@@ -2,8 +2,30 @@
 // and a signup notification to us. Table layout with inline styles, since
 // that's what survives Gmail, Outlook and Apple Mail alike. Web fonts load
 // in Apple Mail and fall back to system fonts everywhere else.
+//
+// Light first, with a dark version for mail apps that follow the reader's
+// setting (Apple Mail, iOS Mail, Outlook for Mac). Apps that force their own
+// dark mode (Zoho, Gmail's app) invert colours instead, and that only comes
+// out clean from a light design: a dark one flips to light with black borders.
 
-const C = {
+const LIGHT = {
+  bg: "#f4f4f6",
+  card: "#ffffff",
+  panel: "#f7f7f9",
+  field: "#ffffff",
+  border: "#e7e7ec",
+  panelBorder: "#dfdfe6",
+  strong: "#0b0b0f",
+  body: "#4a4a55",
+  dim: "#767682",
+  faint: "#9a9aa4",
+  accent: "#3d6dd0",
+  green: "#1f9d55",
+  button: "#0b0b0f",
+  buttonText: "#ffffff",
+};
+
+const DARK = {
   bg: "#07070a",
   card: "#0d0d11",
   panel: "#15151a",
@@ -16,7 +38,11 @@ const C = {
   faint: "#5c5c66",
   accent: "#7aa9ee",
   green: "#4ade80",
+  button: "#fafafd",
+  buttonText: "#07070a",
 };
+
+const C = LIGHT;
 
 const SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 const DISPLAY = "'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
@@ -25,6 +51,23 @@ const MONO = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monos
 
 const FONTS =
   "https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;500;600&family=Instrument+Serif:ital@1&family=Geist+Mono:wght@500&display=swap";
+
+// Each themed element carries one of these classes; the dark block swaps
+// its inline light colour for the dark one.
+const DARK_CSS = `
+    body, .bg { background: ${DARK.bg} !important; }
+    .card { background: ${DARK.card} !important; border-color: ${DARK.border} !important; }
+    .panel { background: ${DARK.panel} !important; border-color: ${DARK.panelBorder} !important; }
+    .field { background: ${DARK.field} !important; border-color: ${DARK.panelBorder} !important; }
+    .bd { border-color: ${DARK.border} !important; }
+    .t-strong { color: ${DARK.strong} !important; }
+    .t-body { color: ${DARK.body} !important; }
+    .t-dim { color: ${DARK.dim} !important; }
+    .t-faint { color: ${DARK.faint} !important; }
+    .t-accent { color: ${DARK.accent} !important; }
+    .t-ok { color: ${DARK.green} !important; }
+    .btn { background: ${DARK.button} !important; }
+    .btn-t { color: ${DARK.buttonText} !important; }`;
 
 export const esc = (s) =>
   String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
@@ -80,21 +123,24 @@ function shell({ title, preheader, body }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="supported-color-schemes" content="dark">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <title>${esc(title)}</title>
 <link href="${FONTS}" rel="stylesheet">
 <style>
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
   body { margin: 0; padding: 0; background: ${C.bg}; }
   @media (max-width: 620px) {
     .card { padding: 30px 22px 28px !important; }
     .h1 { font-size: 34px !important; }
   }
+  @media (prefers-color-scheme: dark) {${DARK_CSS}
+  }
 </style>
 </head>
-<body style="margin:0;padding:0;background:${C.bg};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${C.bg};">${esc(preheader)}${"&#8199;&#847;".repeat(40)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.bg}" style="background:${C.bg};">
+<body class="bg" style="margin:0;padding:0;background:${C.bg};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}${"&#8199;&#847;".repeat(40)}</div>
+<table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.bg}" style="background:${C.bg};">
 <tr><td align="center" style="padding:40px 16px 48px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
 ${body}
@@ -111,10 +157,10 @@ const brandRow = (logo, badge = "") => `
     <td style="vertical-align:middle;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
         <td style="vertical-align:middle;"><img src="${logo}" width="22" height="22" alt="" style="display:block;border:0;"></td>
-        <td style="vertical-align:middle;padding-left:9px;font-family:${DISPLAY};font-size:16px;line-height:22px;font-weight:600;letter-spacing:-0.2px;color:${C.strong};">Chute</td>
+        <td class="t-strong" style="vertical-align:middle;padding-left:9px;font-family:${DISPLAY};font-size:16px;line-height:22px;font-weight:600;letter-spacing:-0.2px;color:${C.strong};">Chute</td>
       </tr></table>
     </td>
-    ${badge ? `<td align="right" style="vertical-align:middle;font-family:${MONO};font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:${C.dim};">${badge}</td>` : ""}
+    ${badge ? `<td align="right" class="t-dim" style="vertical-align:middle;font-family:${MONO};font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:${C.dim};">${badge}</td>` : ""}
   </tr></table>
 </td></tr>`;
 
@@ -124,30 +170,30 @@ ${inner}
 </td></tr>`;
 
 const footer = (text) => `
-<tr><td style="padding:22px 6px 0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.faint};">${text}</td></tr>`;
+<tr><td class="t-faint" style="padding:22px 6px 0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.faint};">${text}</td></tr>`;
 
 const para = (html, top = 18) =>
-  `<p style="margin:${top}px 0 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${C.body};">${html}</p>`;
+  `<p class="t-body" style="margin:${top}px 0 0;font-family:${SANS};font-size:15px;line-height:1.65;color:${C.body};">${html}</p>`;
 
 // The site's beta form is drawn as a Chute capture window; the email shows
 // the same window, filled in and sent.
 const captureWindow = (logo, email) => `
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.panel}" style="margin:28px 0 30px;background:${C.panel};border:1px solid ${C.panelBorder};border-radius:14px;">
-  <tr><td style="padding:12px 16px;border-bottom:1px solid ${C.border};">
+<table role="presentation" class="panel" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.panel}" style="margin:28px 0 30px;background:${C.panel};border:1px solid ${C.panelBorder};border-radius:14px;">
+  <tr><td class="bd" style="padding:12px 16px;border-bottom:1px solid ${C.border};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-      <td style="vertical-align:middle;font-family:${SANS};font-size:12px;font-weight:500;color:#d6d6dd;">
+      <td class="t-body" style="vertical-align:middle;font-family:${SANS};font-size:12px;font-weight:500;color:${C.body};">
         <img src="${logo}" width="12" height="12" alt="" style="vertical-align:-2px;border:0;">&nbsp; Chute
       </td>
-      <td align="right" style="vertical-align:middle;font-family:${MONO};font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:${C.faint};">beta request</td>
+      <td align="right" class="t-faint" style="vertical-align:middle;font-family:${MONO};font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:${C.faint};">beta request</td>
     </tr></table>
   </td></tr>
   <tr><td style="padding:14px 16px 0;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.field}" style="background:${C.field};border:1px solid ${C.panelBorder};border-radius:10px;">
-      <tr><td style="padding:11px 14px;font-family:${SANS};font-size:14px;font-weight:500;color:${C.strong};">${email}</td></tr>
+    <table role="presentation" class="field" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.field}" style="background:${C.field};border:1px solid ${C.panelBorder};border-radius:10px;">
+      <tr><td class="t-strong" style="padding:11px 14px;font-family:${SANS};font-size:14px;font-weight:500;color:${C.strong};">${email}</td></tr>
     </table>
   </td></tr>
-  <tr><td style="padding:10px 16px 14px;font-family:${SANS};font-size:12px;color:#9a9aa5;">
-    <span style="color:${C.green};">&#9679;</span>&nbsp; On the list &rarr; your installer comes by email
+  <tr><td class="t-dim" style="padding:10px 16px 14px;font-family:${SANS};font-size:12px;color:${C.dim};">
+    <span class="t-ok" style="color:${C.green};">&#9679;</span>&nbsp; On the list &rarr; your installer comes by email
   </td></tr>
 </table>`;
 
@@ -156,8 +202,8 @@ const numbered = (items) => `
 ${items
   .map(
     (item, i) => `  <tr>
-    <td width="34" valign="top" style="padding:9px 0;border-top:1px solid ${C.border};font-family:${MONO};font-size:12px;line-height:22px;color:${C.accent};">0${i + 1}</td>
-    <td style="padding:9px 0;border-top:1px solid ${C.border};font-family:${SANS};font-size:15px;line-height:22px;color:${C.strong};">${item}</td>
+    <td width="34" valign="top" class="bd t-accent" style="padding:9px 0;border-top:1px solid ${C.border};font-family:${MONO};font-size:12px;line-height:22px;color:${C.accent};">0${i + 1}</td>
+    <td class="bd t-strong" style="padding:9px 0;border-top:1px solid ${C.border};font-family:${SANS};font-size:15px;line-height:22px;color:${C.strong};">${item}</td>
   </tr>`,
   )
   .join("\n")}
@@ -173,13 +219,13 @@ export function confirmationEmail(signup, env) {
     preheader: "Chute is in closed beta. Your installer comes by hand, from this address.",
     body: `${brandRow(logo)}
 ${card(`
-  <h1 class="h1" style="margin:0;font-family:${DISPLAY};font-size:40px;line-height:1.08;font-weight:700;letter-spacing:-1.2px;color:${C.strong};">You're on the <span style="font-family:${SERIF};font-style:italic;font-weight:400;letter-spacing:-0.4px;">list.</span></h1>
+  <h1 class="h1 t-strong" style="margin:0;font-family:${DISPLAY};font-size:40px;line-height:1.08;font-weight:700;letter-spacing:-1.2px;color:${C.strong};">You're on the <span style="font-family:${SERIF};font-style:italic;font-weight:400;letter-spacing:-0.4px;">list.</span></h1>
   ${para("Thanks for asking to try Chute. It's in closed beta, so every installer goes out by hand, and yours will come from this address.")}
   ${captureWindow(logo, unlinked(signup.email))}
   ${para("Reply to this email with two things, so I send you the right one:", 0)}
   ${numbered(asks)}
-  <p style="margin:30px 0 0;font-family:${SANS};font-size:15px;font-weight:600;color:${C.strong};">Omkar</p>
-  <p style="margin:2px 0 0;font-family:${SANS};font-size:13px;color:${C.dim};">Making Chute &middot; <a href="${site}" style="color:${C.dim};text-decoration:underline;">usechute.com</a></p>
+  <p class="t-strong" style="margin:30px 0 0;font-family:${SANS};font-size:15px;font-weight:600;color:${C.strong};">Omkar</p>
+  <p class="t-dim" style="margin:2px 0 0;font-family:${SANS};font-size:13px;color:${C.dim};">Making Chute &middot; <a href="${site}" class="t-dim" style="color:${C.dim};text-decoration:underline;">usechute.com</a></p>
 `)}
 ${footer(`You're getting this because ${unlinked(signup.email)} asked for Chute beta access on usechute.com. If that wasn't you, ignore this email and you won't hear from us again.`)}`,
   });
@@ -233,25 +279,25 @@ export function notificationEmail(signup, env) {
     preheader: [platform, place, when].filter(Boolean).join(" · "),
     body: `${brandRow(logo, `Beta request &middot; #${number}`)}
 ${card(`
-  <p style="margin:0;font-family:${MONO};font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${C.accent};">New signup</p>
-  <p style="margin:10px 0 0;font-family:${DISPLAY};font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-0.6px;color:${C.strong};word-break:break-all;">${unlinked(email)}</p>
+  <p class="t-accent" style="margin:0;font-family:${MONO};font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${C.accent};">New signup</p>
+  <p class="t-strong" style="margin:10px 0 0;font-family:${DISPLAY};font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-0.6px;color:${C.strong};word-break:break-all;">${unlinked(email)}</p>
   ${para(esc(hint), 8)}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:26px;">
 ${rows
   .map(
     ([label, value]) => `    <tr>
-      <td width="76" valign="top" style="padding:12px 0;border-top:1px solid ${C.border};font-family:${MONO};font-size:11px;line-height:20px;letter-spacing:1.2px;text-transform:uppercase;color:${C.dim};">${label}</td>
-      <td style="padding:12px 0;border-top:1px solid ${C.border};font-family:${SANS};font-size:14px;line-height:20px;color:${C.strong};">${esc(value)}</td>
+      <td width="76" valign="top" class="bd t-dim" style="padding:12px 0;border-top:1px solid ${C.border};font-family:${MONO};font-size:11px;line-height:20px;letter-spacing:1.2px;text-transform:uppercase;color:${C.dim};">${label}</td>
+      <td class="bd t-strong" style="padding:12px 0;border-top:1px solid ${C.border};font-family:${SANS};font-size:14px;line-height:20px;color:${C.strong};">${esc(value)}</td>
     </tr>`,
   )
   .join("\n")}
   </table>
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;"><tr>
-    <td bgcolor="${C.strong}" style="background:${C.strong};border-radius:999px;">
-      <a href="${replyLink}" style="display:inline-block;padding:12px 22px;font-family:${SANS};font-size:14px;font-weight:600;color:${C.bg};text-decoration:none;border-radius:999px;">Reply with the installer</a>
+    <td class="btn" bgcolor="${C.button}" style="background:${C.button};border-radius:999px;">
+      <a href="${replyLink}" class="btn-t" style="display:inline-block;padding:12px 22px;font-family:${SANS};font-size:14px;font-weight:600;color:${C.buttonText};text-decoration:none;border-radius:999px;">Reply with the installer</a>
     </td>
   </tr></table>
-  <p style="margin:12px 0 0;font-family:${SANS};font-size:13px;color:${C.dim};">Or just hit Reply. It goes straight to them.</p>
+  <p class="t-dim" style="margin:12px 0 0;font-family:${SANS};font-size:13px;color:${C.dim};">Or just hit Reply. It goes straight to them.</p>
 `)}
 ${footer(`Signup #${number} on the beta list. They also get the "You're on the list" email.`)}`,
   });
