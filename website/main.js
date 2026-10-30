@@ -678,9 +678,29 @@ if (ctaForm) {
     }
   });
 
-  // The form posts to Formspree (its action), which emails each request to
-  // hello@usechute.com with the visitor's address as Reply-To: the installer
-  // goes back as a plain reply. Without JS the form still posts natively.
+  const done = (already) => {
+    setReason(
+      already
+        ? "You're already on the list. Your installer comes by email"
+        : "Got it. You're on the list, check your inbox",
+      "sent",
+    );
+    if (sendBtn) sendBtn.disabled = true;
+    input.disabled = true;
+  };
+
+  // Without JS the browser posts the form itself and the Worker sends the
+  // visitor back here with ?beta=thanks (or error).
+  const back = new URLSearchParams(location.search).get("beta");
+  if (back) {
+    if (back === "thanks") done(false);
+    else setReason("That didn't go through. Try again, or write to hello@usechute.com", "error");
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
+
+  // The form posts to the chute-beta Worker (its action), which emails each
+  // request to hello@usechute.com with the visitor as Reply-To, so the
+  // installer goes back as a plain reply, and sends them "You're on the list".
   let sending = false;
   ctaForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -702,9 +722,15 @@ if (ctaForm) {
         headers: { Accept: "application/json" },
         body: data,
       });
-      if (!res.ok) throw new Error(`Formspree ${res.status}`);
-      setReason("Got it. You're on the list, the installer comes by email", "sent");
-      input.disabled = true;
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        done(body.already === true);
+      } else {
+        // Too many tries (429) and a rejected address (422) explain themselves.
+        const told = (res.status === 429 || res.status === 422) && body.error;
+        setReason(told || "That didn't go through. Try again, or write to hello@usechute.com", "error");
+        if (sendBtn) sendBtn.disabled = false;
+      }
     } catch {
       setReason("That didn't go through. Try again, or write to hello@usechute.com", "error");
       if (sendBtn) sendBtn.disabled = false;
