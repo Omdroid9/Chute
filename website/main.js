@@ -678,31 +678,38 @@ if (ctaForm) {
     }
   });
 
-  ctaForm.addEventListener("submit", (e) => {
+  // The form posts to Formspree (its action), which emails each request to
+  // hello@usechute.com with the visitor's address as Reply-To: the installer
+  // goes back as a plain reply. Without JS the form still posts natively.
+  let sending = false;
+  ctaForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (sending) return;
     const email = input.value.trim();
     if (!EMAIL_OK.test(email)) {
       setReason("That doesn't look like an email address yet", "error");
       input.focus();
       return;
     }
-    // No backend by design: hand off to the visitor's mail app, prefilled.
-    // Warm, self-contained, no fill-in blanks (people just hit send) — we
-    // collect OS/use-case in the reply. The typed email is captured in case
-    // they send from a different account than they want us to reach.
+    sending = true;
+    if (sendBtn) sendBtn.disabled = true;
+    setReason("Sending…", null);
     try {
-      const sub = encodeURIComponent("Chute beta: count me in");
-      const body = encodeURIComponent(
-        `Hi Omkar,\n\n` +
-          `I'd love early access to Chute. You can reach me at ${email}.\n\n` +
-          `Sent from usechute.com`,
-      );
-      window.location.href = `mailto:hello@usechute.com?subject=${sub}&body=${body}`;
-      setReason("Your mail app just opened. Hit send there and you're in", "sent");
-      if (sendBtn) sendBtn.disabled = true;
+      const data = new FormData(ctaForm);
+      data.set("email", email);
+      const res = await fetch(ctaForm.action, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: data,
+      });
+      if (!res.ok) throw new Error(`Formspree ${res.status}`);
+      setReason("Got it. You're on the list, the installer comes by email", "sent");
       input.disabled = true;
     } catch {
-      setReason("Could not open your mail app. Write to hello@usechute.com", "error");
+      setReason("That didn't go through. Try again, or write to hello@usechute.com", "error");
+      if (sendBtn) sendBtn.disabled = false;
+    } finally {
+      sending = false;
     }
   });
 }

@@ -725,7 +725,9 @@
           <p>Chute is in closed beta. Drop your email in. It routes straight to us, and the installer comes back by hand.</p>
 
           <!-- The CTA is the product: a capture window that captures your email -->
-          <form class="cta-window" id="cta-form" novalidate>
+          <form class="cta-window" id="cta-form" action="https://formspree.io/f/xjyyonle" method="POST" novalidate>
+            <input type="hidden" name="subject" value="Chute beta: count me in" />
+            <input type="text" name="_gotcha" tabindex="-1" autocomplete="off" aria-hidden="true" style="display: none" />
             <div class="cta-window-head">
               <img src="/chute-sphere.svg" alt="" width="16" height="16" />
               <span>Chute</span>
@@ -735,6 +737,7 @@
               <label class="sr-only" for="cta-email">Your email address</label>
               <input
                 id="cta-email"
+                name="email"
                 type="email"
                 class="cta-window-input"
                 placeholder="your@email.com"
