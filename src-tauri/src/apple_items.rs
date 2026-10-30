@@ -211,7 +211,7 @@ end run"#;
 
 #[cfg(target_os = "macos")]
 async fn run_append(script: &'static str, args: Vec<String>) -> Result<(), String> {
-  if args.first().is_none_or(|id| id.trim().is_empty()) {
+  if args.first().map_or(true, |id| id.trim().is_empty()) {
     return Err("No item to add to.".to_string());
   }
   let started = std::time::Instant::now();
