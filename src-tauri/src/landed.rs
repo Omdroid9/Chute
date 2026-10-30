@@ -26,8 +26,11 @@ use std::time::Duration;
 
 use objc2::runtime::NSObjectProtocol;
 use objc2::{msg_send, sel, MainThreadMarker};
-use objc2_app_kit::{NSEvent, NSScreen, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_app_kit::{
+  NSEvent, NSPasteboard, NSPasteboardTypeString, NSScreen, NSStatusWindowLevel, NSWindow,
+  NSWindowCollectionBehavior,
+};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -469,6 +472,21 @@ pub fn landed_set_enabled(app: AppHandle, enabled: bool) {
       ns_window.orderOut(None);
     }
   });
+}
+
+/// Landed's Copy: put a capture's text on the clipboard so it can be pasted
+/// into the app being worked in, without switching to Chute.
+#[tauri::command]
+pub fn landed_copy_text(text: String) -> Result<(), String> {
+  let pasteboard = NSPasteboard::generalPasteboard();
+  pasteboard.clearContents();
+  // Safety: AppKit's read-only constant for plain text.
+  let kind = unsafe { NSPasteboardTypeString };
+  if pasteboard.setString_forType(&NSString::from_str(&text), kind) {
+    Ok(())
+  } else {
+    Err("Could not copy to the clipboard".into())
+  }
 }
 
 /// Menu bar icon click: open the panel if it's on. Returns false when it's

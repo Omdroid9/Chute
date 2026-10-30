@@ -3862,33 +3862,55 @@ main h2 .accent-serif {
     0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-/* Sent toast — pops over the top-right edge when an example completes */
+/* Landed drop: when an example is sent, the app's notch confirmation drops
+   from the top edge of the window, the way it does under a MacBook's notch. */
 .demo-toast {
   position: absolute;
   z-index: 3;
-  top: -1.4rem;
-  right: -1.6rem;
+  top: 1px;
+  left: 50%;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.95rem;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #22222a 0%, #17171d 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.07) inset,
-    0 14px 36px rgba(0, 0, 0, 0.5);
-  font-size: 0.8rem;
-  color: var(--text);
-  opacity: 0;
-  transform: translateY(6px) scale(0.96);
-  transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
+  gap: 0.45rem;
+  padding: 0.5rem 1.15rem 0.6rem;
+  border-radius: 0 0 16px 16px;
+  background: #000;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  clip-path: inset(0 -12px 100% -12px);
+  transition: clip-path 0.42s cubic-bezier(0.32, 0.72, 0, 1);
   pointer-events: none;
 }
 
+/* Concave fillets, so the drop flows out of the edge like the notch. */
+.demo-toast::before,
+.demo-toast::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+}
+.demo-toast::before {
+  left: -10px;
+  background: radial-gradient(circle at 0 100%, transparent 10px, #000 10.5px);
+}
+.demo-toast::after {
+  right: -10px;
+  background: radial-gradient(circle at 100% 100%, transparent 10px, #000 10.5px);
+}
+
 .demo-toast.is-in {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+  clip-path: inset(0 -12px 0 -12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-toast { transition: none; }
 }
 
 .demo-toast strong {
@@ -3896,16 +3918,9 @@ main h2 .accent-serif {
 }
 
 .demo-toast-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #7cc7ff, #4d8ef7);
-  color: #0a1224;
-  font-size: 0.7rem;
-  font-weight: 700;
+  display: block;
+  flex: none;
+  color: #5dcaa5;
 }
 
 /* Time pill — right-aligned in the chip row, tabular mono */
@@ -3965,10 +3980,18 @@ main h2 .accent-serif {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* The toast needs breathing room on small screens — hide it */
-@media (max-width: 900px) {
+/* The drop sits inside the window's top edge, so it fits on phones too; there
+   it covers the header, so the header steps aside while it's down. */
+@media (max-width: 520px) {
   .demo-toast {
-    display: none;
+    font-size: 0.72rem;
+    padding: 0.4rem 0.9rem 0.5rem;
+  }
+  .routing-demo-head {
+    transition: opacity 0.2s ease;
+  }
+  .routing-demo:has(.demo-toast.is-in) .routing-demo-head {
+    opacity: 0;
   }
 }
 
@@ -4112,32 +4135,78 @@ main h2 .accent-serif {
   font-weight: 600;
 }
 
-/* 03 · Menu bar strip */
-.dv-menubar {
+/* 03 · Lands in the notch: a menu bar strip whose notch peeks with counts */
+.dv-notch {
+  width: min(16rem, 100%);
+}
+.dv-notch-bar {
+  position: relative;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: 1rem;
-  padding: 0.45rem 0.8rem;
-  border-radius: 9px;
+  height: 1.55rem;
+  padding: 0 0.7rem;
+  border-radius: 9px 9px 0 0;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   color: var(--muted);
 }
-
-.dv-menubar-cluster {
+.dv-notch-shape {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: 1fr 3.4rem 1fr;
+  align-items: center;
+  width: 3.4rem;
+  height: 1.15rem;
+  overflow: hidden;
+  border-radius: 0 0 7px 7px;
+  background: #000;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 0.6rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: dv-notch-peek 4.8s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+.dv-notch-ear {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: center;
+  gap: 0.25rem;
+  opacity: 0;
+  animation: dv-notch-ears 4.8s ease infinite;
 }
-
-.dv-menubar-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #6ee7a0;
-  box-shadow: 0 0 5px rgba(110, 231, 160, 0.8);
+.dv-notch-ear:first-child { grid-column: 1; }
+.dv-notch-ear:last-child { grid-column: 3; color: rgba(255, 255, 255, 0.8); }
+/* The peek's right ear slides over the clock, so it steps aside meanwhile. */
+.dv-notch-time { animation: dv-notch-under 4.8s ease infinite; }
+/* Rest, then peek with the day's counts in the ears, then rest again. */
+@keyframes dv-notch-peek {
+  0%, 22% { width: 3.4rem; border-radius: 0 0 7px 7px; }
+  32%, 78% { width: 11.6rem; border-radius: 0 0 9px 9px; }
+  88%, 100% { width: 3.4rem; border-radius: 0 0 7px 7px; }
+}
+@keyframes dv-notch-under {
+  0%, 24% { opacity: 1; }
+  30%, 82% { opacity: 0; }
+  90%, 100% { opacity: 1; }
+}
+@keyframes dv-notch-ears {
+  0%, 30% { opacity: 0; }
+  36%, 74% { opacity: 1; }
+  80%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dv-notch-shape { animation: none; width: 11.6rem; border-radius: 0 0 9px 9px; }
+  .dv-notch-ear { animation: none; opacity: 1; }
+  .dv-notch-time { animation: none; opacity: 0; }
 }
 
 /* 04 · Time routes to calendar */
@@ -5162,6 +5231,13 @@ main h2 .accent-serif {
 .mbs-title h2 {
   text-wrap: balance;
 }
+.mbs-sub {
+  margin: 1rem auto 0;
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  text-wrap: balance;
+}
 
 /* Scales the lid + base together; origin at the top so it grows downward */
 .mbs-device {
@@ -5311,18 +5387,14 @@ main h2 .accent-serif {
   bottom: 1rem;
   left: 1rem;
 }
+/* Chute's sphere, like a sticker on the palm rest. */
 .mbs-badge-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 999px;
-  transform: rotate(-12deg);
-  background: radial-gradient(circle at 35% 30%, #cfe0ff, #5b8ad8 70%);
   box-shadow: 0 0 0 2px #0b0b0f;
-  color: #0b0b0f;
 }
-.mbs-badge-mark svg { width: 1.35rem; height: 1.35rem; }
 
 /* ---------- Keypad ---------- */
 .mbs-keypad {
@@ -5517,6 +5589,207 @@ main h2 .accent-serif {
   background: rgba(122, 169, 238, 0.16);
 }
 .mbs-app-when { margin-left: 3px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 5.5px; color: #8a8f9c; }
+
+/* ---------- Landed: the notch panel on the MacBook screen ----------
+   Drawn at the same scale as the Library behind it. The shape is the notch:
+   it rests, peeks with counts in its "ears", then opens into the day's list.
+   Stages and rows come from main.js; hover opens it, like resting in the app. */
+.mbs-notch {
+  --notch-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  color: #fff;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 6.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-align: left;
+}
+.mbs-notch-shape {
+  position: relative;
+  width: 84px;
+  height: 13px;
+  overflow: hidden;
+  border-radius: 0 0 6px 6px;
+  background: #000;
+  transition:
+    width 420ms var(--notch-ease),
+    height 420ms var(--notch-ease),
+    border-radius 420ms var(--notch-ease),
+    box-shadow 420ms ease;
+}
+.mbs-notch[data-stage="peek"] .mbs-notch-shape {
+  width: 176px;
+  border-radius: 0 0 8px 8px;
+}
+.mbs-notch[data-stage="open"] .mbs-notch-shape {
+  width: 236px;
+  border-radius: 0 0 13px 13px;
+  box-shadow: 0 14px 28px -10px rgba(0, 0, 0, 0.75);
+}
+.mbs-notch-peek {
+  position: absolute;
+  inset: 0 0 auto;
+  display: grid;
+  grid-template-columns: 46px 84px 46px;
+  justify-content: center;
+  height: 13px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.mbs-notch[data-stage="peek"] .mbs-notch-peek {
+  opacity: 1;
+  transition-delay: 120ms;
+}
+.mbs-notch-ear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mbs-notch-ear:last-child { grid-column: 3; color: rgba(255, 255, 255, 0.78); }
+.mbs-notch-panel {
+  position: absolute;
+  top: 13px;
+  left: 0;
+  width: 236px;
+  box-sizing: border-box;
+  padding: 3px 7px 7px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.mbs-notch[data-stage="open"] .mbs-notch-panel {
+  opacity: 1;
+  transition-delay: 140ms;
+}
+.mbs-notch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1px 4px 4px 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+}
+.mbs-notch-days {
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.mbs-notch-days span {
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.mbs-notch[data-day="yesterday"] .mbs-notch-days [data-day="yesterday"],
+.mbs-notch[data-day="today"] .mbs-notch-days [data-day="today"],
+.mbs-notch[data-day="tomorrow"] .mbs-notch-days [data-day="tomorrow"] {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.mbs-notch-count { font-family: "Geist Mono", ui-monospace, monospace; font-size: 6px; }
+.mbs-notch-group {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 4px 1.5px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mbs-notch-row + .mbs-notch-group {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.1);
+}
+.mbs-notch-group em { color: #ff8a7a; font-family: "Geist Mono", ui-monospace, monospace; font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.mbs-notch-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 4px;
+  border-radius: 5px;
+  transition: background-color 160ms ease;
+}
+.mbs-notch-row.is-open {
+  align-items: start;
+  background: rgba(255, 255, 255, 0.08);
+}
+.mbs-notch-kind { position: relative; display: block; width: 8px; height: 8px; color: rgba(255, 255, 255, 0.82); }
+.mbs-notch-kind svg { display: block; width: 8px; height: 8px; }
+.mbs-notch-kind::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #5dcaa5;
+  box-shadow: 0 0 0 1px #000;
+}
+.mbs-notch-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbs-notch-row.is-open .mbs-notch-text { white-space: normal; }
+.mbs-notch-meta { display: none; margin-top: 2px; color: rgba(255, 255, 255, 0.55); font-size: 5.5px; }
+.mbs-notch-actions { display: none; gap: 3px; margin-top: 3px; }
+.mbs-notch-row.is-open .mbs-notch-meta { display: block; }
+.mbs-notch-row.is-open .mbs-notch-actions { display: flex; }
+.mbs-notch-actions span {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 5.5px;
+  font-weight: 600;
+}
+.mbs-notch-actions .is-done { background: rgba(93, 202, 165, 0.2); color: #5dcaa5; }
+.mbs-notch-where { color: rgba(255, 255, 255, 0.55); font-size: 5.5px; white-space: nowrap; }
+.mbs-notch-row.is-open .mbs-notch-where { visibility: hidden; }
+.mbs-notch-time {
+  justify-self: end;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 5px;
+  white-space: nowrap;
+}
+.mbs-notch-time.is-due { color: rgba(255, 255, 255, 0.85); }
+.mbs-notch-time.is-past { color: #ff8a7a; }
+.mbs-notch-row.is-done .mbs-notch-text { color: rgba(255, 255, 255, 0.45); text-decoration: line-through; }
+.mbs-notch-row.is-done .mbs-notch-time { color: rgba(255, 255, 255, 0.4); }
+.mbs-notch-row.is-done .mbs-notch-kind { opacity: 0.45; }
+/* Captions hung just under the notch, narrating the loop like subtitles; they
+   follow the shape as it grows, so the words stay next to what they describe. */
+.mbs-notch-caption {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  margin: 0;
+  pointer-events: none;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+.mbs-notch-caption.is-in { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .mbs-notch-shape, .mbs-notch-peek, .mbs-notch-panel, .mbs-notch-days span, .mbs-notch-caption { transition: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .mbs { min-height: auto; }

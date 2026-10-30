@@ -379,6 +379,10 @@ async function runBootstrap(): Promise<void> {
   await ensureCaptureColumn(db, "recurrence_next_at", "DATETIME NULL");
   await ensureCaptureColumn(db, "routing_source", "TEXT NULL");
   await ensureCaptureColumn(db, "routing_reason", "TEXT NULL");
+  // When the reminder a capture became was marked done from Landed (UTC).
+  await ensureCaptureColumn(db, "completed_at", "DATETIME NULL");
+  // The day a dateless capture (a note) was moved to from Landed (local ISO).
+  await ensureCaptureColumn(db, "planned_at", "DATETIME NULL");
 
   await db.execute(
     `
@@ -503,8 +507,13 @@ export async function listCaptures(limit = 100): Promise<Capture[]> {
   return rows;
 }
 
-/** Today's captures (local day), newest first. `created_at` is stored in UTC. */
-export async function listCapturesToday(limit = 50): Promise<Capture[]> {
+/** SQLite date modifier for a local day relative to today, e.g. "-1 days". */
+function dayModifier(dayOffset: number): string {
+  return `${dayOffset >= 0 ? "+" : ""}${Math.trunc(dayOffset)} days`;
+}
+
+/** Captures made on a local day (0 today, -1 yesterday), newest first. `created_at` is stored in UTC. */
+export async function listCapturesCreatedOn(dayOffset: number, limit = 50): Promise<Capture[]> {
   const db = await getDatabase();
   return db.select<Capture[]>(
     `
@@ -512,11 +521,38 @@ export async function listCapturesToday(limit = 50): Promise<Capture[]> {
         ${CAPTURE_SELECT_FIELDS}
       FROM captures
       LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
-      WHERE DATE(captures.created_at, 'localtime') = DATE('now', 'localtime')
+      WHERE DATE(captures.created_at, 'localtime') = DATE('now', 'localtime', $1)
       ORDER BY captures.created_at DESC
-      LIMIT $1;
+      LIMIT $2;
     `,
-    [limit],
+    [dayModifier(dayOffset), limit],
+  );
+}
+
+/** Today's captures (local day), newest first. */
+export function listCapturesToday(limit = 50): Promise<Capture[]> {
+  return listCapturesCreatedOn(0, limit);
+}
+
+/**
+ * Captures that may be due on a local day: a reminder_time on that day
+ * (stored as a local ISO string, so no zone conversion), plus every repeating
+ * reminder, whose occurrences the caller works out.
+ */
+export async function listDueCandidatesOn(dayOffset: number, limit = 100): Promise<Capture[]> {
+  const db = await getDatabase();
+  return db.select<Capture[]>(
+    `
+      SELECT
+        ${CAPTURE_SELECT_FIELDS}
+      FROM captures
+      LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
+      WHERE (reminder_time IS NOT NULL AND DATE(reminder_time) = DATE('now', 'localtime', $1))
+        OR (recurrence_rule IS NOT NULL AND recurrence_next_at IS NOT NULL)
+      ORDER BY reminder_time ASC
+      LIMIT $2;
+    `,
+    [dayModifier(dayOffset), limit],
   );
 }
 
@@ -860,6 +896,61 @@ export async function getAppendStatesFor(captureIds: string[]): Promise<Map<stri
     states.set(row.capture_id, state);
   }
   return states;
+}
+
+/** Give a dateless capture a day (and time) in Landed: where it was moved to. */
+export async function setCapturePlannedAt(id: string, plannedAt: string | null): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`UPDATE captures SET planned_at = $1 WHERE id = $2;`, [plannedAt, id]);
+}
+
+/**
+ * Captures moved to a local day from Landed (planned_at, a local ISO string).
+ * Fails until the main window has added the column; callers treat that as none.
+ */
+export async function listPlannedOn(dayOffset: number, limit = 100): Promise<Capture[]> {
+  const db = await getDatabase();
+  return db.select<Capture[]>(
+    `
+      SELECT
+        ${CAPTURE_SELECT_FIELDS},
+        captures.planned_at
+      FROM captures
+      LEFT JOIN agent_jobs ON agent_jobs.capture_id = captures.id
+      WHERE captures.planned_at IS NOT NULL
+        AND DATE(captures.planned_at) = DATE('now', 'localtime', $1)
+      ORDER BY captures.planned_at ASC
+      LIMIT $2;
+    `,
+    [dayModifier(dayOffset), limit],
+  );
+}
+
+/** Mark a capture's reminder done (or not done again) after Reminders agreed. */
+export async function setCaptureCompleted(id: string, completed: boolean): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    completed
+      ? `UPDATE captures SET completed_at = CURRENT_TIMESTAMP WHERE id = $1;`
+      : `UPDATE captures SET completed_at = NULL WHERE id = $1;`,
+    [id],
+  );
+}
+
+/** Which of these captures are marked done. */
+export async function getCompletedIdsFor(captureIds: string[]): Promise<Set<string>> {
+  if (captureIds.length === 0) return new Set();
+  const db = await getDatabase();
+  const placeholders = captureIds.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await db.select<Array<{ id: string }>>(
+    `
+      SELECT id
+      FROM captures
+      WHERE completed_at IS NOT NULL AND id IN (${placeholders});
+    `,
+    captureIds,
+  );
+  return new Set(rows.map((row) => row.id));
 }
 
 /** Hard-delete a capture (used by undo). SQLite FK cascade is off by default,

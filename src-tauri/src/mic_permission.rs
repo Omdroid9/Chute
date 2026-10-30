@@ -4,12 +4,15 @@
 //!
 //! AVFoundation's permission APIs must run on the main thread; calling them
 //! from the PTT worker (or Tokio) often means no dialog and a stuck denial.
+//!
+//! The prompt only ever comes from using voice (holding the key or the mic
+//! button), never from opening the capture bar: asking on every hotkey kept
+//! the dialog coming back for anyone who doesn't use voice.
 
 #![cfg(target_os = "macos")]
 
 use std::ffi::CStr;
 use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use block2::RcBlock;
@@ -25,6 +28,11 @@ extern "C" {}
 extern "C" {
   fn pthread_main_np() -> i32;
 }
+
+/// What a first-time grant reports instead of recording. Shown as a note, not
+/// an error, by the capture bar (src/lib/voice.ts has the same text); it
+/// avoids the word "microphone", which makes the bar offer System Settings.
+pub const VOICE_NOW_ALLOWED: &str = "Voice is on. Hold the key again to talk.";
 
 /// `AVAuthorizationStatus` values.
 const AUTH_NOT_DETERMINED: i64 = 0;
@@ -73,9 +81,11 @@ fn ensure_microphone_access_inner() -> Result<(), String> {
       }
 
       match rx.recv_timeout(Duration::from_secs(120)) {
+        // Granted, but don't record on this hold: the key was most likely let
+        // go while the dialog was up, and nothing would stop the recording.
         Ok(true) => {
           eprintln!("[voice] microphone TCC: granted");
-          Ok(())
+          Err(VOICE_NOW_ALLOWED.to_string())
         }
         Ok(false) => Err(
           "Microphone permission was denied. Enable Chute in System Settings → Privacy & Security → Microphone."
@@ -115,16 +125,6 @@ pub fn ensure_microphone_access(app: &AppHandle) -> Result<(), String> {
         .to_string(),
     ),
   }
-}
-
-/// Best-effort warm-up so the first Right ⌘ hold does not race the TCC prompt.
-pub fn preflight_microphone_access(app: &AppHandle) {
-  let app = app.clone();
-  thread::spawn(move || {
-    if let Err(err) = ensure_microphone_access(&app) {
-      eprintln!("[voice] mic preflight: {err}");
-    }
-  });
 }
 
 /// Opens System Settings → Privacy & Security → Microphone.

@@ -40,6 +40,7 @@ import {
   getVoiceModelStatus,
   getVoicePttStatus,
   startVoice,
+  isVoiceNowAllowed,
   stopVoice,
   downloadVoiceModel,
   subscribeVoice,
@@ -371,6 +372,17 @@ export default function CaptureWindow() {
     });
   }, []);
   const [savedMessage, setSavedMessage] = useState("");
+
+  /** A voice start that didn't record: the first-time "voice is on" note, or an error. */
+  const showVoiceProblem = useCallback((message: string) => {
+    if (isVoiceNowAllowed(message)) {
+      setSaveError(null);
+      setSavedMessage(message);
+      window.setTimeout(() => setSavedMessage(""), 2600);
+      return;
+    }
+    setSaveError(message);
+  }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // Set by the keydown handler when double-Enter ends a list: the bullet
@@ -478,7 +490,7 @@ export default function CaptureWindow() {
         if (/input monitoring/i.test(message)) {
           setVoicePttStatus("needs-input-monitoring");
         }
-        setSaveError(message);
+        showVoiceProblem(message);
         setVoiceState("idle");
       },
       onModelProgress: (downloaded, total) =>
@@ -503,7 +515,7 @@ export default function CaptureWindow() {
       active = false;
       unlisten?.();
     };
-  }, []);
+  }, [showVoiceProblem]);
 
   function onMicPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) {
@@ -522,7 +534,7 @@ export default function CaptureWindow() {
     micHoldActiveRef.current = true;
     void startVoice().catch((error) => {
       micHoldActiveRef.current = false;
-      setSaveError(error instanceof Error ? error.message : String(error));
+      showVoiceProblem(error instanceof Error ? error.message : String(error));
       setVoiceState("idle");
     });
   }
@@ -568,7 +580,7 @@ export default function CaptureWindow() {
       rightCmdHoldRef.current = true;
       void startVoice().catch((error) => {
         rightCmdHoldRef.current = false;
-        setSaveError(error instanceof Error ? error.message : String(error));
+        showVoiceProblem(error instanceof Error ? error.message : String(error));
         setVoiceState("idle");
       });
     }
@@ -597,7 +609,7 @@ export default function CaptureWindow() {
       window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [showVoiceProblem]);
 
   const hydratedRef = useRef(false);
 

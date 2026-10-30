@@ -36,4 +36,4 @@ objc2-foundation = "0.3"
 block2 = "0.6"
 # Landed notch panel (level, notch geometry, pointer polling) and the capture
 # bar as a non-activating NSPanel.
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSPanel", "NSResponder", "NSScreen", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSPanel", "NSPasteboard", "NSResponder", "NSScreen", "NSWindow"] }

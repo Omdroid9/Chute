@@ -1,32 +1,63 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import type { Capture } from "../../types";
 import {
   type AppendState,
   dismissCaptureAppends,
   getAppendStatesFor,
   getCaptureLinksFor,
+  getCompletedIdsFor,
   getSetting,
-  listCapturesToday,
+  listCapturesCreatedOn,
+  listDueCandidatesOn,
+  listPlannedOn,
   retryCaptureAppends,
   setCaptureSyncError,
   setSetting,
 } from "../../lib/db";
 import { loadSyncConfig, type CaptureSyncOutcome } from "../../lib/sync/syncManager";
 import { DESTINATION_LABELS, describeDestinations } from "../../lib/sync/destinations";
+import { describeSyncError } from "../../lib/sync/syncErrors";
 import {
   KIND_LABELS,
+  actionableReminder,
   countLanded,
   formatWhen,
+  moveKindOf,
   primaryTarget,
   toLandedRow,
   type LandedCounts,
   type LandedKind,
   type LandedRow,
   type LandedStatus,
+  type MoveKind,
 } from "./landedRows";
 import { openTarget } from "./landedActions";
+import { moveToDay, setReminderDone, snoozeReminder } from "./landedReminders";
+import {
+  EMPTY_TEXT,
+  EMPTY_VIEWS,
+  LANDED_DAYS,
+  canDropOn,
+  dueOn,
+  failedIds,
+  groupsOf,
+  headCount,
+  moveTime,
+  pastDue,
+  patchRow,
+  rowsOf,
+  startOfLocalDay,
+  type DueCapture,
+  type DueRow,
+  type LandedDay,
+  type LandedViews,
+} from "./landedDays";
 import { parseStoredTimestamp } from "../../lib/timestamps";
+import { formatClockTime, parseReminderTime } from "../../lib/reminderTime";
+import { toLocalIso } from "../../lib/recurrence";
+import { SNOOZE_LABELS, snoozeChoices, snoozeUntil, type SnoozeChoice } from "../../lib/snooze";
 import {
   CONF_DROP,
   CONF_PILL,
@@ -71,6 +102,14 @@ const PRESS_DEDUPE_PX = 8;
 const EXPAND_DELAY_MS = 350;
 /** Room kept below the open panel for its shadow. */
 const PANEL_SHADOW_ROOM = 24;
+/** A press on a movable row becomes a drag once it travels this far. */
+const DRAG_START_PX = 6;
+/** A press with no release heard (WebKit can drop it) counts as a click after this. */
+const CLICK_FALLBACK_MS = 700;
+const MOVED_NOTICE_MS = 2600;
+/** After the peek shows, keep resting this long and the panel opens. */
+const REST_OPEN_MS = 650;
+const COPIED_MS = 1400;
 
 /** Chute's mark (the website's sphere), wherever the panel stands for Chute. */
 function ChuteMark({ size }: { size: number }) {
@@ -183,6 +222,92 @@ function PeekStatus({ counts }: { counts: LandedCounts }) {
   return <span className="landed-muted">Nothing yet</span>;
 }
 
+/** A row picked up from the list, following the pointer to a day in the pill. */
+interface Drag {
+  row: LandedRow;
+  kind: MoveKind;
+  x: number;
+  y: number;
+  /** The day under the pointer it can be dropped on. */
+  over: LandedDay | null;
+}
+
+const dayLabel = (day: LandedDay) => LANDED_DAYS.find((option) => option.day === day)?.label ?? day;
+
+function dayAt(element: Element | null | undefined): LandedDay | null {
+  const value = element?.closest<HTMLElement>("[data-day]")?.dataset.day;
+  return LANDED_DAYS.find(({ day }) => day === value)?.day ?? null;
+}
+
+/** Puts the whole capture on the clipboard, to paste into the app you're in. */
+function CopyAction({ copied }: { copied: boolean }) {
+  return (
+    <span className={`landed-row-copy${copied ? " is-copied" : ""}`} data-action="copy">
+      {copied ? "Copied" : "Copy"}
+    </span>
+  );
+}
+
+const SNOOZE_CHOICES = Object.keys(SNOOZE_LABELS) as SnoozeChoice[];
+
+/**
+ * Finish or move a reminder without opening Reminders. The line itself is
+ * inert: a near miss between buttons shouldn't open Reminders and close the panel.
+ */
+function ReminderActions({
+  done,
+  picking,
+  snoozing,
+  snoozed,
+}: {
+  done: boolean;
+  /** Snooze was pressed: its choices stand in for Done. */
+  picking: boolean;
+  /** The choice on its way to Reminders. */
+  snoozing: SnoozeChoice | undefined;
+  snoozed: boolean;
+}) {
+  if (done) {
+    return (
+      <span className="landed-row-todo" data-action="none">
+        <span className="landed-row-done-mark">
+          <CheckIcon />
+          Done
+        </span>
+        <span className="landed-row-pill" data-action="done">
+          Undo
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="landed-row-todo" data-action="none">
+      {!picking && (
+        <span className="landed-row-pill is-done" data-action="done">
+          Done
+        </span>
+      )}
+      <span
+        className={`landed-row-pill${picking ? " is-active" : ""}${snoozed ? " is-confirmed" : ""}`}
+        data-action="snooze"
+      >
+        {snoozed ? "Snoozed" : "Snooze"}
+      </span>
+      {picking &&
+        snoozeChoices().map((choice) => (
+          <span
+            key={choice}
+            className={`landed-row-pill${snoozing === choice ? " is-busy" : ""}`}
+            data-action="snooze-to"
+            data-snooze={choice}
+          >
+            {SNOOZE_LABELS[choice]}
+          </span>
+        ))}
+    </span>
+  );
+}
+
 function fixLabel(row: LandedRow, settingsOpened: boolean): string {
   if (row.problem?.kind === "permission") return settingsOpened ? "Retry" : "Fix";
   if (row.problem?.kind === "reconnect") return "Fix";
@@ -197,6 +322,8 @@ export default function LandedWindow() {
   const [near, setNear] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The row whose Snooze is showing its choices. */
+  const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
   const hoverRef = useRef<string | null>(null);
   const expandTimer = useRef<number | undefined>(undefined);
 
@@ -208,11 +335,26 @@ export default function LandedWindow() {
     window.clearTimeout(expandTimer.current);
     expandTimer.current = undefined;
     setExpandedId(null);
+    setSnoozeOpenId(null);
     if (id) {
       expandTimer.current = window.setTimeout(() => setExpandedId(id), EXPAND_DELAY_MS);
     }
   }, []);
-  const [rows, setRows] = useState<LandedRow[]>([]);
+  const [hoverDay, setHoverDay] = useState<LandedDay | null>(null);
+  // Which day the open panel shows; back to Today whenever it closes.
+  const [day, setDay] = useState<LandedDay>("today");
+  const [views, setViews] = useState<LandedViews>(EMPTY_VIEWS);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [snoozedId, setSnoozedId] = useState<string | null>(null);
+  /** Snoozes on their way to Reminders, by capture. */
+  const [snoozing, setSnoozing] = useState<ReadonlyMap<string, SnoozeChoice>>(new Map());
+  /** Done or Snooze that Reminders refused, by capture; cleared when the panel closes. */
+  const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  /** "Moved to Tomorrow · 9:00 AM", by capture, for a moment after a drop. */
+  const [rowNotices, setRowNotices] = useState<ReadonlyMap<string, string>>(new Map());
+  const [drag, setDrag] = useState<Drag | null>(null);
+  /** The day a drop just landed on, flashed in the pill. */
+  const [flashDay, setFlashDay] = useState<LandedDay | null>(null);
   const [notionPageId, setNotionPageId] = useState<string | undefined>(undefined);
   const [panelHeight, setPanelHeight] = useState(160);
   const [tipHeight, setTipHeight] = useState(96);
@@ -235,6 +377,19 @@ export default function LandedWindow() {
   const tipSeenRef = useRef<boolean | null>(null);
   const restingRef = useRef<Rect | null>(null);
   const peekTimer = useRef<number | undefined>(undefined);
+  const restTimer = useRef<number | undefined>(undefined);
+  const copiedTimer = useRef<number | undefined>(undefined);
+  const snoozedTimer = useRef<number | undefined>(undefined);
+  /** Captures with a Done or Snooze in flight: one at a time each. */
+  const busy = useRef(new Set<string>());
+  /** Done/Undo not yet confirmed by Reminders; a refresh meanwhile keeps showing it. */
+  const doneInFlight = useRef(new Map<string, boolean>());
+  const viewsRef = useRef<LandedViews>(EMPTY_VIEWS);
+  const dragRef = useRef<Drag | null>(null);
+  /** A press on a movable row, waiting to become a click (release) or a drag (move). */
+  const pendingRef = useRef<{ row: LandedRow; kind: MoveKind; x: number; y: number } | null>(null);
+  const pendingTimer = useRef<number | undefined>(undefined);
+  const flashTimer = useRef<number | undefined>(undefined);
   const closeTimer = useRef<number | undefined>(undefined);
   const confTimer = useRef<number | undefined>(undefined);
   const refreshSeq = useRef(0);
@@ -249,11 +404,12 @@ export default function LandedWindow() {
 
   // Event handlers are subscribed once; they read the latest state from refs.
   useLayoutEffect(() => {
-    rowsRef.current = rows;
+    rowsRef.current = [views.today, views.yesterday, views.tomorrow].flatMap(rowsOf);
+    viewsRef.current = views;
     notionPageIdRef.current = notionPageId;
     settingsOpenedRef.current = settingsOpened;
     tipSeenRef.current = tipSeen;
-  }, [rows, notionPageId, settingsOpened, tipSeen]);
+  }, [views, notionPageId, settingsOpened, tipSeen]);
 
   const clearTimer = (timer: { current: number | undefined }) => {
     window.clearTimeout(timer.current);
@@ -273,7 +429,18 @@ export default function LandedWindow() {
     (next: Stage) => {
       stageRef.current = next;
       setStage(next);
-      if (next !== "open") hoverRow(null);
+      if (next !== "open") {
+        hoverRow(null);
+        setHoverDay(null);
+        // Closing drops nothing: a drag in progress is put back.
+        pendingRef.current = null;
+        dragRef.current = null;
+        setDrag(null);
+      }
+      if (next === "idle") {
+        setDay("today");
+        setRowErrors(new Map());
+      }
       if (next !== "conf") {
         clearTimer(confTimer);
         setConfirmation(null);
@@ -286,6 +453,7 @@ export default function LandedWindow() {
   const close = useCallback(
     (suppress: boolean) => {
       clearTimer(peekTimer);
+      clearTimer(restTimer);
       clearTimer(closeTimer);
       if (suppress) suppressUntilLeave.current = true;
       go("idle");
@@ -296,6 +464,7 @@ export default function LandedWindow() {
   const openPanel = useCallback(
     (by: "pointer" | "tray") => {
       clearTimer(peekTimer);
+      clearTimer(restTimer);
       clearTimer(closeTimer);
       openedBy.current = by;
       pointerArrived.current = by === "pointer";
@@ -307,22 +476,51 @@ export default function LandedWindow() {
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
     try {
-      const [captures, config] = await Promise.all([listCapturesToday(50), loadSyncConfig()]);
-      const ids = captures.map((capture) => capture.id);
-      const [links, appends] = await Promise.all([
+      const now = new Date();
+      const [today, yesterday, todayCandidates, tomorrowCandidates, todayPlanned, tomorrowPlanned, config] =
+        await Promise.all([
+          listCapturesCreatedOn(0),
+          listCapturesCreatedOn(-1),
+          listDueCandidatesOn(0),
+          listDueCandidatesOn(1),
+          // Moved here from another day; the main window adds planned_at on launch.
+          listPlannedOn(0).catch(() => [] as Capture[]),
+          listPlannedOn(1).catch(() => [] as Capture[]),
+          loadSyncConfig(),
+        ]);
+      // One copy of each capture, the planned one (it knows its day) winning.
+      const merged = (due: Capture[], planned: Capture[]) => [
+        ...new Map([...due, ...planned].map((capture) => [capture.id, capture])).values(),
+      ];
+      const dueToday = dueOn(merged(todayCandidates, todayPlanned), startOfLocalDay(0, now), now);
+      const dueTomorrow = dueOn(merged(tomorrowCandidates, tomorrowPlanned), startOfLocalDay(1, now), now);
+      const captures = [...today, ...yesterday, ...[...dueToday, ...dueTomorrow].map((item) => item.capture)];
+      const ids = [...new Set(captures.map((c) => c.id))];
+      const [links, appends, completed] = await Promise.all([
         getCaptureLinksFor(ids),
         // The main window creates this table on launch; until then, no additions.
         getAppendStatesFor(ids).catch(() => new Map<string, AppendState>()),
+        // Likewise the completed_at column.
+        getCompletedIdsFor(ids).catch(() => new Set<string>()),
       ]);
       if (seq !== refreshSeq.current) return;
-      setRows(
-        captures.map((capture) =>
-          toLandedRow(capture, config, links.get(capture.id) ?? [], appends.get(capture.id)),
-        ),
-      );
+      const toRow = (capture: Capture) =>
+        toLandedRow(
+          capture,
+          config,
+          links.get(capture.id) ?? [],
+          appends.get(capture.id),
+          doneInFlight.current.get(capture.id) ?? completed.has(capture.id),
+        );
+      const toDueRow = ({ capture, dueAt, past }: DueCapture): DueRow => ({ row: toRow(capture), dueAt, past });
+      setViews({
+        yesterday: { due: [], captured: yesterday.map(toRow) },
+        today: { due: dueToday.map(toDueRow), captured: today.map(toRow) },
+        tomorrow: { due: dueTomorrow.map(toDueRow), captured: [] },
+      });
       setNotionPageId(config.notionPageId);
     } catch (error) {
-      console.error("Landed: could not load today's captures", error);
+      console.error("Landed: could not load captures", error);
     }
   }, []);
 
@@ -359,6 +557,169 @@ export default function LandedWindow() {
     [close, refresh],
   );
 
+  const setRowError = useCallback((id: string, error: unknown, app = "Reminders") => {
+    setRowErrors((current) => {
+      const next = new Map(current);
+      if (error === null) {
+        next.delete(id);
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        next.set(id, describeSyncError(`${app}: ${message}`)?.message ?? message);
+      }
+      return next;
+    });
+  }, []);
+
+  const notify = useCallback((id: string, text: string | null) => {
+    setRowNotices((current) => {
+      const next = new Map(current);
+      if (text === null) next.delete(id);
+      else next.set(id, text);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Drop a row on a day: a reminder or event moves in its app, anything else
+   * gets the day and a reminder. It keeps its time of day; moved to today it
+   * never lands in the past.
+   */
+  const dropOn = useCallback(
+    async (row: LandedRow, kind: MoveKind, day: LandedDay) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      const now = new Date();
+      const offset = LANDED_DAYS.find((option) => option.day === day)?.offset ?? 0;
+      const own = kind === "plan" ? row.plannedAt : row.reminderTime;
+      const from = own ? parseReminderTime(own) : null;
+      const valid = from && !Number.isNaN(from.getTime()) ? from : null;
+      const allDay = kind === "event" && valid !== null && valid.getHours() === 0 && valid.getMinutes() === 0;
+      const at = moveTime(valid, startOfLocalDay(offset, now), now, allDay);
+      setRowError(row.id, null);
+      notify(row.id, `Moving to ${dayLabel(day)}…`);
+      clearTimer(flashTimer);
+      setFlashDay(day);
+      flashTimer.current = window.setTimeout(() => setFlashDay(null), 900);
+      try {
+        await moveToDay(row, kind, toLocalIso(at));
+        const when = allDay ? dayLabel(day) : `${dayLabel(day)} · ${formatClockTime(at)}`;
+        notify(row.id, kind === "plan" ? `Moved to ${when} · reminder set` : `Moved to ${when}`);
+        window.setTimeout(() => notify(row.id, null), MOVED_NOTICE_MS);
+      } catch (error) {
+        console.error("Landed: could not move the capture", error);
+        notify(row.id, null);
+        setRowError(row.id, error, kind === "event" ? "Calendar" : "Reminders");
+      } finally {
+        busy.current.delete(row.id);
+      }
+    },
+    [notify, setRowError],
+  );
+
+  const setDragState = useCallback((next: Drag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  }, []);
+
+  /** Open a row where it landed (a click on it). */
+  const openRow = useCallback(
+    (row: LandedRow) => {
+      void openTarget(row, primaryTarget(row), notionPageIdRef.current).catch((error) =>
+        console.error("Landed: could not open the capture", error),
+      );
+      close(true);
+    },
+    [close],
+  );
+
+  /** The press on a movable row ended: a drop if it was dragged, else a click. */
+  const release = useCallback(() => {
+    clearTimer(pendingTimer);
+    const dragging = dragRef.current;
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (dragging) {
+      setDragState(null);
+      if (dragging.over) void dropOn(dragging.row, dragging.kind, dragging.over);
+      return;
+    }
+    if (pending) openRow(pending.row);
+  }, [dropOn, openRow, setDragState]);
+
+  /** The pointer moved with a button down: start or carry a drag. */
+  const dragTo = useCallback(
+    (x: number, y: number) => {
+      const pending = pendingRef.current;
+      const current = dragRef.current;
+      if (!current) {
+        if (!pending || Math.hypot(x - pending.x, y - pending.y) < DRAG_START_PX) return;
+        clearTimer(pendingTimer);
+        hoverRow(null);
+        setHoverDay(null);
+      }
+      const row = current?.row ?? pending!.row;
+      const kind = current?.kind ?? pending!.kind;
+      const day = dayAt(document.elementFromPoint(x, y));
+      const over = day && canDropOn(viewsRef.current, row.id, day) ? day : null;
+      setDragState({ row, kind, x, y, over });
+    },
+    [hoverRow, setDragState],
+  );
+
+  /** Done (or Undo): reads as done at once, and goes back if Reminders refuses. */
+  const markDone = useCallback(
+    async (row: LandedRow, done: boolean) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      doneInFlight.current.set(row.id, done);
+      setRowError(row.id, null);
+      setViews((current) => patchRow(current, row.id, { done }));
+      try {
+        await setReminderDone(row, done);
+      } catch (error) {
+        console.error("Landed: could not mark the reminder", error);
+        setViews((current) => patchRow(current, row.id, { done: !done }));
+        setRowError(row.id, error);
+      } finally {
+        doneInFlight.current.delete(row.id);
+        busy.current.delete(row.id);
+      }
+    },
+    [setRowError],
+  );
+
+  const snooze = useCallback(
+    async (row: LandedRow, choice: SnoozeChoice) => {
+      if (busy.current.has(row.id)) return;
+      busy.current.add(row.id);
+      setRowError(row.id, null);
+      setSnoozing((current) => new Map(current).set(row.id, choice));
+      try {
+        const until = snoozeUntil(choice);
+        await snoozeReminder(row, until);
+        setViews((current) => patchRow(current, row.id, { reminderTime: until }));
+        setSnoozeOpenId((current) => (current === row.id ? null : current));
+        clearTimer(snoozedTimer);
+        setSnoozedId(row.id);
+        snoozedTimer.current = window.setTimeout(() => {
+          snoozedTimer.current = undefined;
+          setSnoozedId(null);
+        }, COPIED_MS);
+      } catch (error) {
+        console.error("Landed: could not snooze the reminder", error);
+        setRowError(row.id, error);
+      } finally {
+        busy.current.delete(row.id);
+        setSnoozing((current) => {
+          const next = new Map(current);
+          next.delete(row.id);
+          return next;
+        });
+      }
+    },
+    [setRowError],
+  );
+
   /** One press on the canvas at (x, y), from either the DOM or the poller. */
   const press = useCallback(
     (x: number, y: number) => {
@@ -373,12 +734,47 @@ export default function LandedWindow() {
       const rowId = element.closest<HTMLElement>("[data-row]")?.dataset.row;
       const row = rowsRef.current.find((candidate) => candidate.id === rowId);
 
+      if (action === "none") return;
       if (action === "tip-ok") {
         markTipSeen();
         return;
       }
+      if (action === "day") {
+        const next = dayAt(element);
+        if (next) setDay(next);
+        return;
+      }
+      if (action === "copy" && row) {
+        // Onto the clipboard, ready to paste into the app being worked in.
+        void invoke("landed_copy_text", { text: row.fullText })
+          .then(() => {
+            clearTimer(copiedTimer);
+            setCopiedId(row.id);
+            copiedTimer.current = window.setTimeout(() => {
+              copiedTimer.current = undefined;
+              setCopiedId(null);
+            }, COPIED_MS);
+          })
+          .catch((error) => console.error("Landed: could not copy", error));
+        return;
+      }
       if (action === "fix" && row) {
         void fix(row);
+        return;
+      }
+      // Done and Snooze keep the panel open: the point is not to leave the app you're in.
+      if (action === "done" && row) {
+        void markDone(row, !row.done);
+        return;
+      }
+      if (action === "snooze" && row) {
+        setSnoozeOpenId((current) => (current === row.id ? null : row.id));
+        return;
+      }
+      if (action === "snooze-to" && row) {
+        const choice = element.closest<HTMLElement>("[data-snooze]")?.dataset.snooze;
+        const known = SNOOZE_CHOICES.find((candidate) => candidate === choice);
+        if (known) void snooze(row, known);
         return;
       }
       if (action === "add" && row) {
@@ -396,17 +792,26 @@ export default function LandedWindow() {
         return;
       }
       if (row) {
-        void openTarget(row, primaryTarget(row), notionPageIdRef.current).catch((error) =>
-          console.error("Landed: could not open the capture", error),
-        );
-        close(true);
+        // A movable row waits: released in place it opens; moved, it's picked up.
+        const kind = moveKindOf(row);
+        if (!kind) {
+          openRow(row);
+          return;
+        }
+        pendingRef.current = { row, kind, x, y };
+        clearTimer(pendingTimer);
+        pendingTimer.current = window.setTimeout(() => {
+          pendingTimer.current = undefined;
+          // No release came through, but no button is held either: a click.
+          if (pendingRef.current?.row.id === row.id && !dragRef.current && !pointerRef.current?.buttons) release();
+        }, CLICK_FALLBACK_MS);
         return;
       }
       if (element.closest(".landed-shape") && stageRef.current !== "open") {
         openPanel("pointer");
       }
     },
-    [close, fix, markTipSeen, openPanel],
+    [close, fix, markDone, markTipSeen, openPanel, openRow, release, snooze],
   );
 
   const showConfirmation = useCallback(
@@ -429,6 +834,21 @@ export default function LandedWindow() {
       setNear(pointer.near);
       const current = stageRef.current;
       const pressed = pointer.buttons && !previous?.buttons;
+      const released = !pointer.buttons && Boolean(previous?.buttons);
+
+      // A press on a movable row: released it's a click or a drop; held and
+      // moved it's a drag, which keeps the panel open even past its edge.
+      if (pendingRef.current || dragRef.current) {
+        if (released) {
+          release();
+          // Let go outside the panel: carry on below, so it closes as usual.
+          if (pointer.inside) return;
+        } else if (pointer.buttons) {
+          if (pointer.inside) dragTo(pointer.x, pointer.y);
+          else if (dragRef.current) setDragState({ ...dragRef.current, over: null });
+          return;
+        }
+      }
 
       // Opened from the menu bar: stay open until the pointer arrives, and
       // close on a click anywhere else.
@@ -443,7 +863,9 @@ export default function LandedWindow() {
 
       if (!pointer.inside) {
         clearTimer(peekTimer);
+        clearTimer(restTimer);
         hoverRow(null);
+        setHoverDay(null);
         suppressUntilLeave.current = false;
         if ((current === "peek" || current === "open") && closeTimer.current === undefined) {
           closeTimer.current = window.setTimeout(() => {
@@ -464,8 +886,9 @@ export default function LandedWindow() {
       }
 
       if (current === "open") {
-        const row = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>("[data-row]");
-        hoverRow(row?.dataset.row ?? null);
+        const element = document.elementFromPoint(pointer.x, pointer.y);
+        hoverRow(element?.closest<HTMLElement>("[data-row]")?.dataset.row ?? null);
+        setHoverDay(dayAt(element));
         return;
       }
 
@@ -479,7 +902,14 @@ export default function LandedWindow() {
           peekTimer.current = window.setTimeout(() => {
             peekTimer.current = undefined;
             const latest = pointerRef.current;
-            if (latest?.inside && !latest.buttons && stageRef.current === "idle") go("peek");
+            if (!latest?.inside || latest.buttons || stageRef.current !== "idle") return;
+            go("peek");
+            // Keep resting and the panel opens: seeing everything takes no click.
+            restTimer.current = window.setTimeout(() => {
+              restTimer.current = undefined;
+              const still = pointerRef.current;
+              if (still?.inside && !still.buttons && stageRef.current === "peek") openPanel("pointer");
+            }, REST_OPEN_MS);
           }, PEEK_DELAY_MS);
         }
       }
@@ -497,6 +927,16 @@ export default function LandedWindow() {
         showConfirmation({ tone: "fail", text: `${DESTINATION_LABELS[outcome.failed[0]]} needs you` });
       }
     };
+
+    // WebKit's own mouse events, when it delivers them, make the drag smoother.
+    const onMouseMove = (event: MouseEvent) => {
+      if ((pendingRef.current || dragRef.current) && event.buttons) dragTo(event.clientX, event.clientY);
+    };
+    const onMouseUp = () => {
+      if (pendingRef.current || dragRef.current) release();
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
 
     const unlisteners = [
       listen<Pointer>("landed://pointer", (event) => onPointer(event.payload)),
@@ -518,9 +958,16 @@ export default function LandedWindow() {
       clearTimer(peekTimer);
       clearTimer(closeTimer);
       clearTimer(confTimer);
+      clearTimer(restTimer);
+      clearTimer(copiedTimer);
+      clearTimer(snoozedTimer);
+      clearTimer(pendingTimer);
+      clearTimer(flashTimer);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
       unlisteners.forEach((pending) => void pending.then((unlisten) => unlisten()));
     };
-  }, [close, go, hoverRow, openPanel, press, refresh, showConfirmation]);
+  }, [close, dragTo, go, hoverRow, openPanel, press, refresh, release, setDragState, showConfirmation]);
 
   // Read the user's settings, then show the panel (it starts hidden natively).
   useEffect(() => {
@@ -566,8 +1013,15 @@ export default function LandedWindow() {
   }, [hoverRow, updateListEdges]);
 
   const panelTop = geometry?.hasNotch ? geometry.notch.height : 10;
-  const counts = countLanded(rows);
-  const attention = counts.failed > 0;
+  const view = views[day];
+  const groups = groupsOf(view);
+  const pastCount = pastDue(view).length;
+  // The peek counts what was captured today (not what's due from earlier
+  // days), but any failure the panel can show needs you.
+  const failed = failedIds(views);
+  const counts = { ...countLanded(views.today.captured), failed: failed.size };
+  const attention = failed.size > 0;
+  const isOpen = stage === "open";
   const tipVisible = Boolean(geometry && !geometry.hasNotch && tipSeen === false && stage === "idle");
 
   useLayoutEffect(() => {
@@ -575,7 +1029,12 @@ export default function LandedWindow() {
     if (!panel || !geometry) return;
     setPanelHeight(Math.min(Math.ceil(panelTop + panel.offsetHeight + 8), geometry.height - PANEL_SHADOW_ROOM));
     updateListEdges();
-  }, [rows, geometry, panelTop, settingsOpened, expandedId, updateListEdges]);
+  }, [view, geometry, panelTop, settingsOpened, expandedId, snoozeOpenId, rowErrors, updateListEdges]);
+
+  // Each day, and each opening, starts at the top of the list.
+  useLayoutEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [day, isOpen]);
 
   useLayoutEffect(() => {
     if (tipVisible && tipRef.current) setTipHeight(Math.ceil(tipRef.current.offsetHeight));
@@ -614,6 +1073,84 @@ export default function LandedWindow() {
     ? { top: geometry.notch.height, height: CONF_DROP, width: geometry.notch.width + EAR * 2 }
     : { top: 0, height: CONF_PILL.height, width: CONF_PILL.width };
   const tip = tipVisible ? tipRect(geometry, tipHeight) : null;
+
+  /** One capture: `time` is its time column, `when` its reminder time once opened up. */
+  const rowItem = (row: LandedRow, time: JSX.Element, when: string | null) => (
+    <li
+      key={row.id}
+      data-row={row.id}
+      className={[
+        "landed-row",
+        `is-${row.status}`,
+        row.done ? "is-done" : "",
+        hoverId === row.id ? "is-hover" : "",
+        expandedId === row.id ? "is-expanded" : "",
+        drag?.row.id === row.id ? "is-lifted" : "",
+      ].join(" ")}
+    >
+      <KindIcon kind={row.kind} status={row.status} />
+      <span className="landed-row-main">
+        {expandedId === row.id ? (
+          <>
+            <span className="landed-row-full">{row.fullText}</span>
+            <span className="landed-row-meta">
+              <span>
+                {[KIND_LABELS[row.kind], when, row.status === "kept" ? null : row.where].filter(Boolean).join(" · ")}
+                {moveKindOf(row) && <span className="landed-row-hint"> · drag to a day to move it</span>}
+              </span>
+              <span className="landed-row-actions">
+                <CopyAction copied={copiedId === row.id} />
+                {row.status !== "failed" && (
+                  <span className="landed-row-add" data-action="add">
+                    Add
+                  </span>
+                )}
+              </span>
+            </span>
+            {actionableReminder(row) && (
+              <ReminderActions
+                done={row.done}
+                picking={snoozeOpenId === row.id}
+                snoozing={snoozing.get(row.id)}
+                snoozed={snoozedId === row.id}
+              />
+            )}
+          </>
+        ) : (
+          <span className="landed-row-text">{row.text}</span>
+        )}
+        {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
+        {rowErrors.has(row.id) && <span className="landed-row-note">{rowErrors.get(row.id)}</span>}
+        {rowNotices.has(row.id) && <span className="landed-row-note is-ok">{rowNotices.get(row.id)}</span>}
+      </span>
+      {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
+        <span className="landed-row-fix" data-action="fix">
+          {fixLabel(row, settingsOpened.has(row.id))}
+        </span>
+      ) : (
+        <span className="landed-row-end">
+          {(hoverId === row.id || copiedId === row.id) && <CopyAction copied={copiedId === row.id} />}
+          {hoverId === row.id && (
+            <span className="landed-row-add" data-action="add">
+              Add
+            </span>
+          )}
+          <span className="landed-row-where">{row.where}</span>
+        </span>
+      )}
+      {time}
+    </li>
+  );
+
+  /** Something due: its time column is when it's due that day, marked once that's gone by. */
+  const dueRow = ({ row, dueAt, past }: DueRow) =>
+    rowItem(
+      row,
+      <time className={`landed-row-time is-due${past && !row.done ? " is-past" : ""}`} dateTime={toLocalIso(dueAt)}>
+        {formatClockTime(dueAt)}
+      </time>,
+      formatWhen(toLocalIso(dueAt)),
+    );
 
   return (
     <div
@@ -668,11 +1205,33 @@ export default function LandedWindow() {
             ref={panelRef}
           >
             <div className="landed-head">
-              <span>Landed today</span>
-              <span className="landed-head-count">{counts.total}</span>
+              <span className="landed-days">
+                {LANDED_DAYS.map(({ day: option, label }) => (
+                  <span
+                    key={option}
+                    data-action="day"
+                    data-day={option}
+                    className={[
+                      "landed-day",
+                      option === day ? "is-active" : "",
+                      hoverDay === option && !drag ? "is-hover" : "",
+                      // While dragging: Today and Tomorrow take the drop, Yesterday steps back.
+                      drag ? (canDropOn(views, drag.row.id, option) ? "is-drop-target" : "is-drop-off") : "",
+                      drag?.over === option ? "is-drop-over" : "",
+                      flashDay === option ? "is-flash" : "",
+                    ].join(" ")}
+                  >
+                    {label}
+                    {option !== day && rowsOf(views[option]).some((row) => row.status === "failed") && (
+                      <span className="landed-dot is-failed" />
+                    )}
+                  </span>
+                ))}
+              </span>
+              <span className="landed-head-count">{headCount(day, view)}</span>
             </div>
-            {rows.length === 0 ? (
-              <p className="landed-empty">Nothing yet today. Captures show up here as they land.</p>
+            {groups.due.length === 0 && groups.captured.length === 0 ? (
+              <p className="landed-empty">{EMPTY_TEXT[day]}</p>
             ) : (
               <ul
                 className="landed-rows"
@@ -680,67 +1239,40 @@ export default function LandedWindow() {
                 onScroll={onListScroll}
                 data-more={moreBelow ? "" : undefined}
               >
-                {rows.map((row) => (
-                  <li
-                    key={row.id}
-                    data-row={row.id}
-                    className={[
-                      "landed-row",
-                      `is-${row.status}`,
-                      hoverId === row.id ? "is-hover" : "",
-                      expandedId === row.id ? "is-expanded" : "",
-                    ].join(" ")}
-                  >
-                    <KindIcon kind={row.kind} status={row.status} />
-                    <span className="landed-row-main">
-                      {expandedId === row.id ? (
-                        <>
-                          <span className="landed-row-full">{row.fullText}</span>
-                          <span className="landed-row-meta">
-                            <span>
-                              {[KIND_LABELS[row.kind], formatWhen(row.reminderTime), row.status === "kept" ? null : row.where]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                            {row.status !== "failed" && (
-                              <span className="landed-row-add" data-action="add">
-                                Add
-                              </span>
-                            )}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="landed-row-text">{row.text}</span>
-                      )}
-                      {row.problem && <span className="landed-row-note">{row.problem.message}</span>}
-                    </span>
-                    {expandedId === row.id && row.status !== "failed" ? null : row.status === "failed" ? (
-                      <span className="landed-row-fix" data-action="fix">
-                        {fixLabel(row, settingsOpened.has(row.id))}
-                      </span>
-                    ) : (
-                      <span className="landed-row-end">
-                        {hoverId === row.id && (
-                          <span className="landed-row-add" data-action="add">
-                            Add
-                          </span>
-                        )}
-                        <span className="landed-row-where">{row.where}</span>
-                      </span>
-                    )}
-                    <time className="landed-row-time" dateTime={row.createdAt}>
-                      {parseStoredTimestamp(row.createdAt).toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </time>
+                {/* Today opens on what's due today, whenever it was captured. */}
+                {day === "today" && groups.due.length > 0 && (
+                  <li className="landed-group">
+                    Due today
+                    {pastCount > 0 && <span className="landed-group-past">{pastCount} past</span>}
                   </li>
-                ))}
+                )}
+                {groups.due.map(dueRow)}
+                {day === "today" && groups.due.length > 0 && groups.captured.length > 0 && (
+                  <li className="landed-group">Captured</li>
+                )}
+                {groups.captured.map((row) =>
+                  rowItem(
+                    row,
+                    <time className="landed-row-time" dateTime={row.createdAt}>
+                      {formatClockTime(parseStoredTimestamp(row.createdAt))}
+                    </time>,
+                    formatWhen(row.reminderTime),
+                  ),
+                )}
               </ul>
             )}
           </div>
         </div>
       </div>
+
+      {drag && (
+        // What's being carried, under the pointer; it never catches the pointer itself.
+        <div className="landed-ghost" style={{ left: drag.x + 12, top: drag.y + 10 }} aria-hidden>
+          <KindIcon kind={drag.row.kind} status={drag.row.status} />
+          <span className="landed-ghost-text">{drag.row.text}</span>
+          {drag.over && <span className="landed-ghost-to">{dayLabel(drag.over)}</span>}
+        </div>
+      )}
 
       {tip && (
         <div
@@ -750,7 +1282,7 @@ export default function LandedWindow() {
           role="note"
         >
           <p className="landed-tip-title">Your captures land here</p>
-          <p className="landed-tip-body">Rest here to peek, click to open. Brushing past does nothing.</p>
+          <p className="landed-tip-body">Rest here to peek, keep resting to open. Brushing past does nothing.</p>
           <span className="landed-tip-ok" data-action="tip-ok">
             Got it
           </span>

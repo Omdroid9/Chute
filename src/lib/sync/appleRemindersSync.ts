@@ -26,6 +26,16 @@ export async function appendToAppleReminder(id: string, text: string): Promise<v
   await invoke("append_to_reminder", { id, text });
 }
 
+/** Mark a reminder done in Reminders, or not done again. */
+export async function setAppleReminderCompleted(id: string, completed: boolean): Promise<void> {
+  await invoke("set_reminder_completed", { id, completed });
+}
+
+/** Move a reminder's due date to `due` (a local ISO datetime); it's no longer done. */
+export async function snoozeAppleReminder(id: string, due: string): Promise<void> {
+  await invoke("snooze_reminder", { id, due });
+}
+
 /** Verify Reminders automation works by creating a throwaway test reminder. */
 export async function testAppleReminders(list?: string): Promise<void> {
   await createAppleReminder({

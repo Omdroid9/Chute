@@ -69,6 +69,12 @@ export interface Capture {
   reminder_time: string | null;
   recurrence_rule: string | null;
   recurrence_next_at: string | null;
+  /**
+   * The day (and time) a capture was moved to from Landed when it has no date
+   * of its own in its app, e.g. a note. Local ISO, like reminder_time. Only
+   * read by Landed's planned query, so other selects leave it out.
+   */
+  planned_at?: string | null;
   routing_source: string | null;
   routing_reason: string | null;
   last_sync_error?: string | null;

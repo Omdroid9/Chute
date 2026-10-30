@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Capture } from "../../types";
 import type { SyncConfig } from "../../lib/sync/syncEngine";
 import { describeDestinations } from "../../lib/sync/destinations";
-import { countLanded, formatWhen, primaryTarget, toLandedRow } from "./landedRows";
+import {
+  PLAN_LINK_KIND,
+  actionableReminder,
+  countLanded,
+  formatWhen,
+  moveKindOf,
+  primaryTarget,
+  toLandedRow,
+} from "./landedRows";
 
 const CONFIG: SyncConfig = {
   slackWebhookUrl: "https://hooks.slack.com/services/x",
@@ -185,5 +193,89 @@ describe("formatWhen", () => {
 
   it("has nothing to say without a time", () => {
     expect(formatWhen(null, now)).toBeNull();
+  });
+});
+
+describe("actionableReminder", () => {
+  const link = { destination: "reminders" as const, externalId: "x-apple-reminder://r1" };
+  const inReminders = { target_reminders: 1, synced_reminders: 1, reminder_time: "2026-10-22T16:00:00" };
+
+  it("is the reminder once it's in Reminders, done or not", () => {
+    expect(actionableReminder(toLandedRow(makeCapture(inReminders), CONFIG, [link]))?.link).toEqual(link);
+    const done = toLandedRow(makeCapture(inReminders), CONFIG, [link], undefined, true);
+    expect(done.done).toBe(true);
+    expect(actionableReminder(done)?.destination).toBe("reminders");
+  });
+
+  it("works for reminders sent before Chute kept ids (found by title later)", () => {
+    expect(actionableReminder(toLandedRow(makeCapture(inReminders), CONFIG))?.link).toBeNull();
+  });
+
+  it("is null until it's in Reminders, or when it failed", () => {
+    expect(actionableReminder(toLandedRow(makeCapture({ target_reminders: 1 }), CONFIG))).toBeNull();
+    const failed = makeCapture({ target_reminders: 1, last_sync_error: "Reminders: boom" });
+    expect(actionableReminder(toLandedRow(failed, CONFIG))).toBeNull();
+  });
+
+  it("is null for repeating reminders and for anything that isn't a reminder", () => {
+    const repeating = makeCapture({ ...inReminders, recurrence_rule: "FREQ=DAILY" });
+    expect(actionableReminder(toLandedRow(repeating, CONFIG, [link]))).toBeNull();
+    const note = makeCapture({ target_apple_reminders: 1, synced_apple_reminders: 1 });
+    expect(actionableReminder(toLandedRow(note, CONFIG))).toBeNull();
+  });
+});
+
+describe("moveKindOf", () => {
+  const timed = { reminder_time: "2026-10-21T16:00:00" };
+
+  it("moves a reminder in Reminders, done or not", () => {
+    const inReminders = makeCapture({ ...timed, target_reminders: 1, synced_reminders: 1 });
+    expect(moveKindOf(toLandedRow(inReminders, CONFIG))).toBe("reminder");
+    expect(moveKindOf(toLandedRow(inReminders, CONFIG, [], undefined, true))).toBe("reminder");
+  });
+
+  it("moves an Apple Calendar event in Calendar", () => {
+    const event = makeCapture({ ...timed, target_apple_calendar: 1, synced_apple_calendar: 1 });
+    expect(moveKindOf(toLandedRow(event, CONFIG))).toBe("event");
+  });
+
+  it("gives a note, a message or a kept capture a day in Chute", () => {
+    expect(moveKindOf(toLandedRow(makeCapture({ target_apple_reminders: 1, synced_apple_reminders: 1 }), CONFIG))).toBe("plan");
+    expect(moveKindOf(toLandedRow(makeCapture({ target_slack: 1, synced_slack: 1 }), CONFIG))).toBe("plan");
+    expect(moveKindOf(toLandedRow(makeCapture(), CONFIG))).toBe("plan");
+  });
+
+  it("won't move what repeats, failed, or hasn't landed yet", () => {
+    const repeating = makeCapture({ ...timed, target_reminders: 1, synced_reminders: 1, recurrence_rule: "every:1:day" });
+    expect(moveKindOf(toLandedRow(repeating, CONFIG))).toBeNull();
+    const failed = makeCapture({ target_apple_reminders: 1, last_sync_error: "Not authorized to send Apple events to Notes. (-1743)" });
+    expect(moveKindOf(toLandedRow(failed, CONFIG))).toBeNull();
+    expect(moveKindOf(toLandedRow(makeCapture({ target_apple_reminders: 1 }), CONFIG))).toBeNull();
+  });
+
+  it("won't move a Google Calendar event, which Chute can't reschedule", () => {
+    const google = makeCapture({ ...timed, target_google_calendar: 1, synced_google_calendar: 1 });
+    const config = { ...CONFIG, googleTasksAccessToken: "token", googleCalendarId: "primary" };
+    const row = toLandedRow(google, config);
+    expect(row.kind).toBe("event");
+    expect(moveKindOf(row)).toBeNull();
+  });
+});
+
+describe("a moved note", () => {
+  it("keeps its day and the reminder made for it", () => {
+    const planned = { destination: "reminders" as const, externalId: "x-apple-reminder://p1", kind: PLAN_LINK_KIND };
+    const row = toLandedRow(
+      makeCapture({ target_apple_reminders: 1, synced_apple_reminders: 1, planned_at: "2026-10-22T09:00:00" }),
+      CONFIG,
+      [planned],
+    );
+    expect(row).toMatchObject({ kind: "note", plannedAt: "2026-10-22T09:00:00", planLink: planned });
+  });
+
+  it("doesn't mistake a capture's own reminder for one made by a move", () => {
+    const own = { destination: "reminders" as const, externalId: "x-apple-reminder://r1" };
+    const row = toLandedRow(makeCapture({ target_reminders: 1, synced_reminders: 1 }), CONFIG, [own]);
+    expect(row.planLink).toBeNull();
   });
 });

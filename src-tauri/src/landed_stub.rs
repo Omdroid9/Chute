@@ -34,6 +34,11 @@ pub fn landed_set_hot_rect(_x: f64, _y: f64, _width: f64, _height: f64, _expande
 #[tauri::command]
 pub fn landed_set_enabled(_app: AppHandle, _enabled: bool) {}
 
+#[tauri::command]
+pub fn landed_copy_text(_text: String) -> Result<(), String> {
+  Err("Copy is only available on macOS".into())
+}
+
 pub fn open_from_tray(_app: &AppHandle) -> bool {
   false
 }

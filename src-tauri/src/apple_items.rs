@@ -273,6 +273,179 @@ pub async fn append_to_calendar_event(uid: String, text: String, calendar: Optio
   }
 }
 
+// Done and Snooze from Landed change the reminder by id, like additions.
+#[cfg(target_os = "macos")]
+const SET_REMINDER_COMPLETED: &str = r#"on run argv
+  tell application "Reminders"
+    set completed of (reminder id (item 1 of argv)) to ((item 2 of argv) is "true")
+  end tell
+  return "ok"
+end run"#;
+
+// Snoozing means "remind me later", so a snoozed reminder is never left done.
+// An alert set in Reminders moves too, or it would still go off at the old time.
+#[cfg(target_os = "macos")]
+const SNOOZE_REMINDER: &str = r#"on run argv
+  set dueDate to my makeDate((item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer)
+  tell application "Reminders"
+    set theReminder to reminder id (item 1 of argv)
+    set due date of theReminder to dueDate
+    set completed of theReminder to false
+    try
+      if remind me date of theReminder is not missing value then set remind me date of theReminder to dueDate
+    end try
+  end tell
+  return "ok"
+end run"#;
+
+#[cfg(target_os = "macos")]
+async fn run_on_reminder(what: &'static str, script: String, args: Vec<String>) -> Result<(), String> {
+  if args.first().is_none_or(|id| id.trim().is_empty()) {
+    return Err("No reminder to change.".to_string());
+  }
+  let started = std::time::Instant::now();
+  let result = tauri::async_runtime::spawn_blocking(move || {
+    // Reminders refuses scripting until it's running (-600); start it hidden.
+    let _ = std::process::Command::new("open")
+      .args(["-g", "-j", "-a", "Reminders"])
+      .status();
+    run_osascript(&script, &args).map(|_| ())
+  })
+  .await
+  .map_err(|error| error.to_string())?;
+  eprintln!(
+    "[apple] reminder {what}: {} ms, {}",
+    started.elapsed().as_millis(),
+    if result.is_ok() { "ok" } else { "failed" }
+  );
+  result
+}
+
+/// Mark a reminder done in Reminders, or not done again (Undo).
+#[tauri::command]
+pub async fn set_reminder_completed(id: String, completed: bool) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    run_on_reminder(
+      if completed { "done" } else { "undone" },
+      SET_REMINDER_COMPLETED.to_string(),
+      vec![id, completed.to_string()],
+    )
+    .await
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (id, completed);
+    Err("Apple Reminders is only available on macOS.".to_string())
+  }
+}
+
+/// Move a reminder's due date to `due`, a local ISO datetime.
+#[tauri::command]
+pub async fn snooze_reminder(id: String, due: String) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    let mut args = vec![id];
+    args.extend(date_args(&due)?);
+    run_on_reminder("snoozed", format!("{DATE_HANDLER}\n{SNOOZE_REMINDER}"), args).await
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (id, due);
+    Err("Apple Reminders is only available on macOS.".to_string())
+  }
+}
+
+// Moving an event from Landed: same by-id search as additions, then the start
+// moves and the end follows, keeping its length. The end moves first when the
+// event moves later (and the start first when earlier), so it never ends
+// before it starts in between.
+#[cfg(target_os = "macos")]
+const MOVE_EVENT: &str = r#"on moveIn(theCal, eventUid, newStart)
+  tell application "Calendar"
+    try
+      set oldStart to start date of (event id eventUid of theCal)
+    on error errMsg number errNum
+      if errNum is -1743 then error errMsg number errNum
+      return false
+    end try
+    set span to (end date of (event id eventUid of theCal)) - oldStart
+    if newStart > oldStart then
+      set end date of (event id eventUid of theCal) to newStart + span
+      set start date of (event id eventUid of theCal) to newStart
+    else
+      set start date of (event id eventUid of theCal) to newStart
+      set end date of (event id eventUid of theCal) to newStart + span
+    end if
+  end tell
+  return true
+end moveIn
+
+on run argv
+  set eventUid to item 1 of argv
+  set newStart to my makeDate((item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer)
+  set calName to item 8 of argv
+  tell application "Calendar"
+    set allCals to every calendar
+    set preferred to missing value
+    repeat with aCal in allCals
+      if calName is "" then
+        if (writable of aCal) is true then
+          set preferred to contents of aCal
+          exit repeat
+        end if
+      else if (name of aCal) is calName then
+        set preferred to contents of aCal
+        exit repeat
+      end if
+    end repeat
+  end tell
+  if preferred is not missing value then
+    if my moveIn(preferred, eventUid, newStart) then return "ok"
+  end if
+  repeat with aCal in allCals
+    if my moveIn(contents of aCal, eventUid, newStart) then return "ok"
+  end repeat
+  error "Couldn't find the event in Calendar."
+end run"#;
+
+/// Move a Calendar event to start at `start` (a local ISO datetime), keeping
+/// its length. `calendar` is the calendar Chute writes to, searched first.
+#[tauri::command]
+pub async fn move_calendar_event(uid: String, start: String, calendar: Option<String>) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    if uid.trim().is_empty() {
+      return Err("No event to move.".to_string());
+    }
+    let mut args = vec![uid];
+    args.extend(date_args(&start)?);
+    args.push(calendar.unwrap_or_default());
+    let script = format!("{DATE_HANDLER}\n{MOVE_EVENT}");
+    let started = std::time::Instant::now();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+      // Calendar refuses scripting until it's running (-600); start it hidden.
+      let _ = std::process::Command::new("open")
+        .args(["-g", "-j", "-a", "Calendar"])
+        .status();
+      run_osascript(&script, &args).map(|_| ())
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    eprintln!(
+      "[apple] event moved: {} ms, {}",
+      started.elapsed().as_millis(),
+      if result.is_ok() { "ok" } else { "failed" }
+    );
+    result
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (uid, start, calendar);
+    Err("Apple Calendar is only available on macOS.".to_string())
+  }
+}
+
 // Finding an item Chute created before it kept ids ("capture_links"): match
 // the title (AppleScript compares case-insensitively), skip items already
 // matched to other captures, and only consider items made after the capture,

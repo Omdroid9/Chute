@@ -59,9 +59,20 @@ export interface LandedRow {
   targets: LandedTarget[];
   problem: SyncProblem | null;
   reminderTime: string | null;
+  /** A repeating reminder: each time comes due, Chute makes a new reminder. */
+  recurring: boolean;
+  /** Its reminder was marked done from Landed. */
+  done: boolean;
+  /** The day (local ISO) it was moved to from Landed, when its app has no date for it. */
+  plannedAt: string | null;
+  /** The reminder made when it was moved to a day, so it still comes up. */
+  planLink: CaptureLink | null;
   /** When it was captured, as stored (UTC). */
   createdAt: string;
 }
+
+/** How the reminder made for a moved note is marked among a capture's links. */
+export const PLAN_LINK_KIND = "planned";
 
 export interface LandedCounts {
   total: number;
@@ -74,6 +85,7 @@ export function toLandedRow(
   config: SyncConfig,
   links: CaptureLink[] = [],
   appends?: AppendState,
+  done = false,
 ): LandedRow {
   const text = capture.content.replace(/\s+/g, " ").trim();
   const fullText = capture.content.trim();
@@ -95,6 +107,11 @@ export function toLandedRow(
     fullText,
     kind: primary ? KIND_BY_DESTINATION[primary.destination] : ("chute" as const),
     reminderTime: capture.reminder_time,
+    recurring: Boolean(capture.recurrence_rule),
+    done,
+    plannedAt: capture.planned_at ?? null,
+    planLink:
+      links.find((link) => link.destination === "reminders" && link.kind === PLAN_LINK_KIND) ?? null,
     createdAt: capture.created_at,
   };
   if (targets.length === 0) {
@@ -128,6 +145,33 @@ export function toLandedRow(
 /** What a click on the row opens: the first place it landed, else the first target. */
 export function primaryTarget(row: LandedRow): LandedTarget | null {
   return row.targets.find((target) => target.synced) ?? row.targets[0] ?? null;
+}
+
+/**
+ * The reminder Done and Snooze act on: one that's in Reminders, for a one-off
+ * capture (a repeating one gets a new reminder each time, so there's no single
+ * one to finish or move).
+ */
+export function actionableReminder(row: LandedRow): LandedTarget | null {
+  if (row.kind !== "reminder" || row.recurring || row.status === "failed") return null;
+  return row.targets.find((target) => target.destination === "reminders" && target.synced) ?? null;
+}
+
+/** How a row moves to another day from Landed. */
+export type MoveKind = "reminder" | "event" | "plan";
+
+/**
+ * A reminder or Calendar event moves in its app; anything else (a note, a
+ * message) gets a day in Chute plus a reminder, so it still comes up. Null
+ * when it can't move: it repeats, failed or is still on its way, or it's a
+ * Google Calendar event, which Chute can't reschedule.
+ */
+export function moveKindOf(row: LandedRow): MoveKind | null {
+  if (row.recurring || (row.status !== "landed" && row.status !== "kept")) return null;
+  if (actionableReminder(row)) return "reminder";
+  if (row.targets.some((target) => target.destination === "apple_calendar" && target.synced)) return "event";
+  if (row.kind === "event") return null;
+  return "plan";
 }
 
 export function countLanded(rows: LandedRow[]): LandedCounts {

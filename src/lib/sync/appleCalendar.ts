@@ -84,3 +84,8 @@ export { classifyTimedEvent };
 export async function appendToAppleCalendarEvent(uid: string, text: string, calendar = ""): Promise<void> {
   await invoke("append_to_calendar_event", { uid, text, calendar });
 }
+
+/** Move a Calendar event to start at `start` (a local ISO datetime), keeping its length. */
+export async function moveAppleCalendarEvent(uid: string, start: string, calendar = ""): Promise<void> {
+  await invoke("move_calendar_event", { uid, start, calendar });
+}

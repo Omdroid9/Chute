@@ -4,6 +4,7 @@ import type { LibraryView } from "./LibrarySidebar";
 import DestinationChips from "./DestinationChips";
 import { formatRelative } from "./libraryShared";
 import { parseStoredTimestamp } from "../../lib/timestamps";
+import { formatReminderTime, parseReminderTime } from "../../lib/reminderTime";
 
 interface Props {
   captures: Capture[];
@@ -130,9 +131,13 @@ export default function LibraryCaptureList({
                   <footer className="library-row-footer">
                     <DestinationChips capture={capture} compact />
                     {capture.reminder_time ? (
-                      <span className="library-row-reminder font-mono">
-                        {capture.reminder_time}
-                      </span>
+                      <time
+                        className="library-row-reminder font-mono"
+                        dateTime={capture.reminder_time}
+                        title={parseReminderTime(capture.reminder_time).toLocaleString()}
+                      >
+                        {formatReminderTime(capture.reminder_time)}
+                      </time>
                     ) : null}
                   </footer>
                 </button>
