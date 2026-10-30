@@ -1,0 +1,14 @@
+{
+  "name": "chute-beta-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test",
+    "preview": "node scripts/preview.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  }
+}

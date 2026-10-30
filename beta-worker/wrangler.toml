@@ -1,0 +1,21 @@
+name = "chute-beta"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+
+[vars]
+SITE_URL = "https://usechute.com"
+ALLOWED_ORIGINS = "https://usechute.com,https://www.usechute.com,http://localhost:5183"
+NOTIFY_TO = "hello@usechute.com"
+FROM_CONFIRM = "Omkar at Chute <hello@usechute.com>"
+FROM_NOTIFY = "Chute beta <beta@usechute.com>"
+TIMEZONE = "America/Los_Angeles"
+
+# Every signup, plus a running count. Created on first deploy.
+[[kv_namespaces]]
+binding = "SIGNUPS"
+
+# Five tries a minute per visitor IP.
+[[ratelimits]]
+name = "SIGNUP_LIMIT"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
