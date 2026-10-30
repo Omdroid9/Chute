@@ -1697,6 +1697,11 @@ if (mbs) {
     return y;
   };
   const STOPS = [0, 0.1, 0.12, 0.3, 1]; // every bend in the ranges above, so linear tweening is exact
+  // The screen is drawn at 2x (styles.css) so its text stays crisp; every scale (and the depth,
+  // so the tilt's perspective is unchanged) is divided by this to keep the original look.
+  const DRAWN_AT = 2;
+  const screenScale = (sx, sy, rotate) =>
+    `scaleX(${sx / DRAWN_AT}) scaleY(${sy / DRAWN_AT}) scaleZ(${1 / DRAWN_AT}) rotateX(${rotate}deg)`;
   const NAV_CLEAR = 88; // keep the resting screen below the floating nav pill
   const titleAt = (p) => `translateY(${map(p, [0, 0.3], [0, 100])}px)`;
 
@@ -1759,8 +1764,8 @@ if (mbs) {
         // distance scrolled since the section's top entered at the bottom of the viewport
         progress: () => clamp01((vh - (sectionTop - window.scrollY) - startD) / (endD - startD)),
         screenAt: (q) =>
-          `translateY(0px) scaleX(${map(q, [0, 1], [1.2, end])}) ` +
-          `scaleY(${map(q, [0, 1], [0.6, end])}) rotateX(${map(q, [0, 0.4, 1], [-28, -28, 0])}deg)`,
+          `translateY(0px) ` +
+          screenScale(map(q, [0, 1], [1.2, end]), map(q, [0, 1], [0.6, end]), map(q, [0, 0.4, 1], [-28, -28, 0])),
         titleAt: null,
       };
     } else {
@@ -1774,8 +1779,8 @@ if (mbs) {
       frames = {
         progress: () => clamp01((window.scrollY - sectionTop) / height),
         screenAt: (p) =>
-          `translateY(${map(p, [0, 1], [0, travel])}px) scaleX(${map(p, [0, 0.3], [1.2, end])}) ` +
-          `scaleY(${map(p, [0, 0.3], [0.6, end])}) rotateX(${map(p, [0.1, 0.12, 0.3], [-28, -28, 0])}deg)`,
+          `translateY(${map(p, [0, 1], [0, travel])}px) ` +
+          screenScale(map(p, [0, 0.3], [1.2, end]), map(p, [0, 0.3], [0.6, end]), map(p, [0.1, 0.12, 0.3], [-28, -28, 0])),
         titleAt,
       };
     }

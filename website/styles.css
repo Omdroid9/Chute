@@ -5287,25 +5287,32 @@ main h2 .accent-serif {
   height: 0.75rem;
   color: #fff;
 }
+/* The screen is drawn at twice its size and the scroll animation scales it down (main.js
+   halves every scale and the depth, so it looks the same). A 3D-animated layer is rasterised
+   at its own size and then scaled, so drawing it small and scaling it up ~1.6x blurred the
+   Library and the notch panel; drawn at 2x it is only ever scaled down, and stays crisp. */
 .mbs-screen {
   position: absolute;
-  inset: 0;
-  height: 24rem;
-  width: 32rem;
-  border-radius: 1rem;
+  top: 0;
+  left: 50%;
+  height: 48rem;
+  width: 64rem;
+  margin-left: -32rem;
+  border-radius: 2rem;
   background: #010101;
-  padding: 0.5rem;
   transform-style: preserve-3d;
   transform-origin: top;
-  /* start state (progress 0) so it's right before main.js runs */
-  transform: translateY(0px) scaleX(1.2) scaleY(0.6) rotateX(-28deg);
+  /* start state (progress 0) so it's right before main.js runs: the original's
+     scaleX(1.2) scaleY(0.6), halved for the 2x drawing, depth halved to match */
+  transform: translateY(0px) scaleX(0.6) scaleY(0.3) scaleZ(0.5) rotateX(-28deg);
 }
 .mbs-screen-bg {
   position: absolute;
   inset: 0;
-  border-radius: 0.5rem;
+  border-radius: 1rem;
   background: #272729;
 }
+/* Everything on the screen is laid out at the original size and drawn at 2x */
 .mbs-screen-img {
   position: absolute;
   inset: 0;
@@ -5313,6 +5320,7 @@ main h2 .accent-serif {
   width: 100%;
   border-radius: 0.5rem;
   overflow: clip;
+  zoom: 2;
 }
 
 /* ---------- Base ---------- */
